@@ -1,5 +1,6 @@
 """OpenESM Python package for accessing experience sampling datasets."""
 
+from .get_dataset import OpenESMDataset, OpenESMDatasetList, get_dataset
 from .list_datasets import list_datasets
 from .utils import (
     cache_info,
@@ -10,9 +11,6 @@ from .utils import (
     msg_warn,
 )
 
-# Import main functions when they're implemented
-# from .get_dataset import get_dataset
-
 __version__ = "0.1.0"
 
 # Export public API
@@ -20,9 +18,11 @@ __all__ = [
     "cache_info",
     "clear_cache",
     "get_cache_dir",
+    "get_dataset",
     "list_datasets",
     "msg_info",
     "msg_success",
     "msg_warn",
-    # "get_dataset",
+    "OpenESMDataset",
+    "OpenESMDatasetList",
 ]
