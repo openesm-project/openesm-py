@@ -56,6 +56,7 @@ Python equivalent of openESM R package for downloading psychology Experience Sam
 - Cache files in platformdirs.user_cache_dir("openesm")
 - Download from Zenodo using requests library
 - Parse metadata from JSON files on GitHub
+- use "rich" for progress bars and logging
 
 ### Testing Requirements
 - Mock all HTTP requests using responses library

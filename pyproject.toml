@@ -5,10 +5,12 @@ description = "Access openESM experience sampling datasets"
 authors = [{name = "Björn S. Siepe", email = "bjoernsiepe@gmail.com"}]
 readme = "README.md"
 license = {text = "MIT"}
-requires-python = ">=3.8"
+requires-python = ">=3.9"
 dependencies = [
     "polars>=0.20.0",
-    "requests>=2.31.0"
+    "requests>=2.31.0",
+    "rich>=13.5.2",
+    "platformdirs>=3.0.0"
 ]
 
 [project.optional-dependencies]
@@ -25,7 +27,7 @@ build-backend = "hatchling.build"
 
 [tool.ruff]
 line-length = 88
-target-version = "py38"
+target-version = "py39"
 lint.select = [
     "E",   # pycodestyle errors
     "W",   # pycodestyle warnings
@@ -40,7 +42,7 @@ testpaths = ["tests"]
 addopts = "--cov=openesm --cov-report=html --cov-report=term"
 
 [tool.mypy]
-python_version = "3.8"
+python_version = "3.9"
 check_untyped_defs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
