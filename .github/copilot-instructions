@@ -1,0 +1,83 @@
+# OpenESM Python Package Context
+
+You are an expert software engineer specializing in Python development. Your task is to provide detailed instructions for developing a Python package that interacts with datasets in the openESM database. The package should follow best practices in Python development, including type hints, testing, and code formatting.
+
+Write clear instructions, focus on being concise, and perform incremental changes. Only add inline comments when necessary, and use lower case comments. 
+
+## Project Overview
+
+### Purpose
+Python equivalent of openESM R package for downloading psychology Experience Sampling Method (ESM) datasets from Zenodo. Target audience: psychology researchers needing programmatic data access.
+
+### Core Functions (Mirror R Package)
+- `list_datasets()` - Browse available datasets, return polars DataFrame with metadata
+- `get_dataset(dataset_id)` - Download single dataset, return OpenESMDataset object
+- `get_dataset([id1, id2])` - Download multiple datasets, return dict of OpenESMDataset objects
+- `.cite()`, `.license()`, `.notes()` - Methods for dataset compliance info
+
+### Data Flow
+1. Fetch metadata from GitHub JSON repository
+2. Resolve Zenodo DOI to download TSV files  
+3. Parse TSV into polars DataFrame
+4. Wrap in OpenESMDataset class with metadata
+5. Cache locally using platformdirs
+
+### R Package Equivalence
+- Maintain API parity with R version for cross-language workflows
+- Same dataset IDs and metadata structure
+- Equivalent caching behavior and user experience
+- Follow Python conventions while preserving functionality
+
+### Package Goals
+- Simple API for non-technical researchers
+- Robust caching to avoid re-downloads
+- Clear error messages and progress indicators
+- Automatic citation/license compliance helpers
+
+## Python Instructions
+
+### Project Architecture
+- Package location: `src/openesm/` - not the same as the root folder name "openesm-py"
+- Use uv for package management
+- Use polars for DataFrames, NOT pandas
+- Use requests for HTTP calls to Zenodo API
+- Use pytest for testing with responses library for mocking
+
+### Code Requirements
+- Always use polars DataFrame operations, never pandas
+- Return OpenESMDataset objects containing both .data (polars DataFrame) and .metadata (dict)
+- Cache downloaded TSV files using platformdirs for cross-platform cache directories
+- Use method chaining style for data operations
+- Type hints required for all functions
+- Follow ruff formatting standards 
+
+### File I/O Rules
+- Read TSV files with `pl.read_csv(path, separator="\t")`
+- Cache files in platformdirs.user_cache_dir("openesm")
+- Download from Zenodo using requests library
+- Parse metadata from JSON files on GitHub
+
+### Testing Requirements
+- Mock all HTTP requests using responses library
+- Test files go in tests/ directory
+- Use pytest fixtures for reusable test data
+- Never make actual network calls in tests
+
+### Development Workflow
+- Editable install with `uv pip install -e .`
+- Run tests with `uv run pytest`
+- Format code with `uv run ruff format .`
+- Check code with `uv run ruff check .`
+
+### API Design Pattern
+```python
+class OpenESMDataset:
+    data: pl.DataFrame
+    metadata: dict
+    
+    def cite(self) -> str
+    def license(self) -> str
+```
+
+### Dependencies in pyproject.toml
+- Use minimal dependencies
