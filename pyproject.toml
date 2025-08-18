@@ -16,6 +16,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "requests-mock>=1.11.0",
     "ruff",
     "mypy",
     "build"
@@ -40,12 +42,3 @@ lint.select = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "--cov=openesm --cov-report=html --cov-report=term"
-
-[tool.mypy]
-python_version = "3.9"
-check_untyped_defs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-warn_unused_ignores = true
-warn_return_any = true
-strict_optional = true

@@ -225,7 +225,7 @@ class OpenESMDataset:
                 "ℹ️  Please ensure you follow the license terms for this dataset.",
                 style="dim blue",
             )
-            console.print()  # empty line at end
+            console.print() 
 
         return capture.get()
 
@@ -309,7 +309,7 @@ class OpenESMDatasetList:
                 f"\nℹ️  Access individual datasets using collection['{dataset_ids[0]}']",
                 style="dim blue",
             )
-            console.print()  # empty line at end
+            console.print()  
 
         return capture.get()
 
