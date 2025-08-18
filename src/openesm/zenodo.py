@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Optional, Union
 
 import requests
 
@@ -154,7 +154,7 @@ def _extract_record_id(zenodo_doi: str) -> str:
     raise ValueError(f"Invalid Zenodo DOI format: {zenodo_doi}")
 
 
-def _get_zenodo_versions(record_id: str, sandbox: bool = False) -> list[dict]:
+def _get_zenodo_versions(record_id: str, sandbox: bool = False) -> list[dict[str, Any]]:
     """Get all versions for a Zenodo record.
 
     Args:
@@ -182,11 +182,11 @@ def _get_zenodo_versions(record_id: str, sandbox: bool = False) -> list[dict]:
 
         # Step 2: Search for all versions using the conceptrecid
         search_url = f"{base_url}/records"
-        params = {
+        params: dict[str, str] = {
             "q": f'conceptrecid:"{conceptrecid}"',
             "all_versions": "true",
             "sort": "version",
-            "size": 100,
+            "size": "100",
         }
 
         response = requests.get(search_url, params=params, timeout=30)

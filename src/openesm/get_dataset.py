@@ -1,7 +1,7 @@
 """Download ESM datasets from OpenESM repository."""
 
 from pathlib import Path
-from typing import Union
+from typing import Any, Union
 
 import polars as pl
 from rich.console import Console
@@ -37,7 +37,7 @@ class OpenESMDataset:
     def __init__(
         self,
         data: pl.DataFrame,
-        metadata: dict,
+        metadata: dict[str, Any],
         dataset_id: str,
         version: str,
     ):
@@ -225,7 +225,7 @@ class OpenESMDataset:
                 "ℹ️  Please ensure you follow the license terms for this dataset.",
                 style="dim blue",
             )
-            console.print() 
+            console.print()
 
         return capture.get()
 
@@ -309,7 +309,7 @@ class OpenESMDatasetList:
                 f"\nℹ️  Access individual datasets using collection['{dataset_ids[0]}']",
                 style="dim blue",
             )
-            console.print()  
+            console.print()
 
         return capture.get()
 
@@ -497,7 +497,11 @@ def _get_multiple_datasets(
             sandbox=sandbox,
             quiet=True,
         )
-        datasets[dataset_id] = dataset
+        # Single dataset_id always returns OpenESMDataset
+        if isinstance(dataset, OpenESMDataset):
+            datasets[dataset_id] = dataset
+        else:
+            raise TypeError(f"Expected OpenESMDataset, got {type(dataset)}")
 
     # create dataset list
     dataset_list = OpenESMDatasetList(datasets)

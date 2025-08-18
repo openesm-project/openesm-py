@@ -132,7 +132,7 @@ def _process_raw_datasets_list(raw_list: dict[str, Any]) -> pl.DataFrame:
         # fallback: create DataFrame step by step to handle schema issues
         msg_warn(f"Warning: Schema issue creating DataFrame: {e}")
         # get all unique keys from all datasets
-        all_keys = set()
+        all_keys: set[str] = set()
         for dataset in processed_datasets:
             all_keys.update(dataset.keys())
 

@@ -183,7 +183,7 @@ def download_with_progress(url: str, destfile: Union[str, Path]) -> bool:
         ) as progress:
             task = progress.add_task(f"Downloading from {url}", total=None)
 
-            response = requests.get(url, stream=True)
+            response = requests.get(url, stream=True, timeout=30)
             response.raise_for_status()
 
             # ensure parent directory exists

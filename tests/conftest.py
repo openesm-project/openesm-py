@@ -1,8 +1,9 @@
 """Pytest configuration and fixtures for openesm tests."""
 
 import tempfile
+from collections.abc import Generator
 from pathlib import Path
-from typing import Any, Dict, Generator
+from typing import Any
 
 import pytest
 
@@ -15,7 +16,7 @@ def temp_cache_dir() -> Generator[Path, None, None]:
 
 
 @pytest.fixture
-def sample_metadata() -> Dict[str, Any]:
+def sample_metadata() -> dict[str, Any]:
     """Sample dataset metadata for testing."""
     return {
         "dataset_id": "0001",
@@ -31,7 +32,7 @@ def sample_metadata() -> Dict[str, Any]:
         "topics": "mood, stress",
         "features": [
             {"name": "mood", "type": "numeric"},
-            {"name": "stress", "type": "numeric"}
+            {"name": "stress", "type": "numeric"},
         ],
-        "additional_comments": "Sample dataset for testing; Multiple notes here"
+        "additional_comments": "Sample dataset for testing; Multiple notes here",
     }
