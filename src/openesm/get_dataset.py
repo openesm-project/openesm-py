@@ -9,14 +9,8 @@ from rich.panel import Panel
 from rich.text import Text
 
 from .list_datasets import list_datasets
-from .utils import (
-    download_with_progress,
-    get_cache_path,
-    msg_info,
-    msg_success,
-    process_specific_metadata,
-    read_json_safe,
-)
+from .utils import (download_with_progress, get_cache_path, msg_info,
+                    msg_success, process_specific_metadata, read_json_safe)
 from .zenodo import download_from_zenodo, resolve_zenodo_version
 
 
@@ -370,6 +364,21 @@ def get_dataset(
 
     # get dataset catalog
     all_datasets = list_datasets()
+
+    # extract first sequence of digits from dataset_id
+    original_dataset_id = str(dataset_id).strip()
+    dataset_id = ""
+
+    # find first continuous sequence of digits
+    for char in original_dataset_id:
+        if char.isdigit():
+            dataset_id += char
+        elif dataset_id:  # if we started collecting digits and hit non-digit, stop
+            break
+
+    # validate that we found some digits
+    if not dataset_id:
+        raise ValueError(f"No numeric dataset ID found in '{original_dataset_id}'")
 
     # filter out datasets with None/null IDs
     all_datasets = all_datasets.filter(pl.col("dataset_id").is_not_null())

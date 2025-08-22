@@ -10,12 +10,8 @@ import pytest
 # Add src to path to import openesm
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from openesm.get_dataset import (
-    OpenESMDataset,
-    OpenESMDatasetList,
-    _get_multiple_datasets,
-    get_dataset,
-)
+from openesm.get_dataset import (OpenESMDataset, OpenESMDatasetList,
+                                 _get_multiple_datasets, get_dataset)
 
 
 @pytest.fixture
@@ -489,6 +485,79 @@ class TestGetDataset:
         mock_get_multiple.assert_called_once_with(
             dataset_ids, "latest", True, False, False, True
         )
+
+    @patch("openesm.get_dataset.list_datasets")
+    @patch("openesm.get_dataset.download_with_progress")
+    @patch("openesm.get_dataset.read_json_safe")
+    @patch("openesm.get_dataset.resolve_zenodo_version")
+    @patch("openesm.get_dataset.download_from_zenodo")
+    @patch("openesm.get_dataset.pl.read_csv")
+    @patch("openesm.get_dataset.get_cache_path")
+    def test_dataset_id_extraction_formats(
+        self,
+        mock_get_cache_path,
+        mock_read_csv,
+        mock_download_zenodo,
+        mock_resolve_version,
+        mock_read_json,
+        mock_download_progress,
+        mock_list_datasets,
+        sample_dataframe,
+        sample_metadata,
+        temp_cache_dir,
+    ):
+        """Test that different dataset ID formats are correctly parsed."""
+        # Mock list_datasets response
+        datasets_df = pl.DataFrame(
+            {
+                "dataset_id": ["0001"],
+                "first_author": ["Smith"],
+                "zenodo_doi": ["10.5072/zenodo.123456"],
+            }
+        )
+        mock_list_datasets.return_value = datasets_df
+
+        # Mock cache paths and other dependencies
+        metadata_path = temp_cache_dir / "metadata.json"
+        data_path = temp_cache_dir / "data.tsv"
+        # Return paths for each call (2 calls per get_dataset call × 5 test formats = 10 calls)
+        mock_get_cache_path.side_effect = [metadata_path, data_path] * 5
+        metadata_path.touch()
+        data_path.touch()
+        mock_read_json.return_value = sample_metadata
+        mock_resolve_version.return_value = "1.0.0"
+        mock_read_csv.return_value = sample_dataframe
+
+        # Test different input formats that should all resolve to "0001"
+        test_formats = [
+            "0001",           # Standard format
+            "0001_fried",     # With author suffix
+            "dataset_0001",   # With prefix
+            "0001_study_2024", # With multiple suffixes
+            " 0001 ",         # With whitespace
+        ]
+
+        for test_id in test_formats:
+            # Reset mock calls for each test
+            mock_list_datasets.reset_mock()
+
+            # Call get_dataset with the test format
+            result = get_dataset(test_id, quiet=True)
+
+            # Verify the dataset was found and loaded correctly
+            assert isinstance(result, OpenESMDataset)
+            assert result.dataset_id == "0001"  # Should always be normalized to "0001"
+
+    @patch("openesm.get_dataset.list_datasets")
+    def test_dataset_id_extraction_no_digits(self, mock_list_datasets):
+        """Test error when dataset ID contains no digits."""
+        datasets_df = pl.DataFrame({"dataset_id": ["0001"], "first_author": ["Smith"]})
+        mock_list_datasets.return_value = datasets_df
+
+        # Test input with no digits should raise ValueError
+        with pytest.raises(ValueError,
+                           match="No numeric dataset ID found in 'no_digits_here'"):
+            get_dataset("no_digits_here")
 
     @patch("openesm.get_dataset.read_json_safe")
     def test_get_dataset_no_zenodo_doi(self, mock_read_json, temp_cache_dir):

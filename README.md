@@ -40,8 +40,6 @@ print(dataset.cite())  # Get citation information
 datasets = openesm.get_dataset(["0001", "0002"])
 ```
 
-
-
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
