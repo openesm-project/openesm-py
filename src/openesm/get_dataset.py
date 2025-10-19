@@ -9,8 +9,14 @@ from rich.panel import Panel
 from rich.text import Text
 
 from .list_datasets import list_datasets
-from .utils import (download_with_progress, get_cache_path, msg_info,
-                    msg_success, process_specific_metadata, read_json_safe)
+from .utils import (
+    download_metadata_from_zenodo,
+    get_cache_path,
+    msg_info,
+    msg_success,
+    process_specific_metadata,
+    read_json_safe,
+)
 from .zenodo import download_from_zenodo, resolve_zenodo_version
 
 
@@ -25,7 +31,8 @@ class OpenESMDataset:
         data: polars DataFrame containing the ESM data
         metadata: Dictionary containing dataset metadata
         dataset_id: String identifier for the dataset
-        version: String version identifier
+        dataset_version: String version identifier for the dataset
+        metadata_version: String version identifier for the metadata catalog
     """
 
     def __init__(
@@ -33,7 +40,8 @@ class OpenESMDataset:
         data: pl.DataFrame,
         metadata: dict[str, Any],
         dataset_id: str,
-        version: str,
+        dataset_version: str,
+        metadata_version: str,
     ):
         """Initialize an OpenESM dataset.
 
@@ -41,12 +49,16 @@ class OpenESMDataset:
             data: polars DataFrame with ESM data
             metadata: Dictionary with dataset metadata
             dataset_id: Dataset identifier
-            version: Version string
+            dataset_version: Dataset version string
+            metadata_version: Metadata catalog version string
         """
         self.data = data
         self.metadata = metadata
         self.dataset_id = dataset_id
-        self.version = version
+        self.dataset_version = dataset_version
+        self.metadata_version = metadata_version
+        # Keep 'version' for backward compatibility
+        self.version = dataset_version
 
     def cite(self) -> str:
         """Get citation information for this dataset.
@@ -176,7 +188,8 @@ class OpenESMDataset:
         """String representation of the dataset."""
         return (
             f"OpenESMDataset(id='{self.dataset_id}', "
-            f"version='{self.version}', "
+            f"dataset_version='{self.dataset_version}', "
+            f"metadata_version='{self.metadata_version}', "
             f"shape={self.data.shape})"
         )
 
@@ -197,7 +210,7 @@ class OpenESMDataset:
             n_participants = meta.get("n_participants", "Unknown")
             n_timepoints = meta.get("n_time_points", "Unknown")
 
-            console.print(f"   • Version: {self.version}", style="cyan")
+            console.print(f"   • Version: {self.dataset_version}", style="cyan")
             console.print(f"   • Authors: {author} et al. ({year})", style="cyan")
             console.print(f"   • Paper DOI: {paper_doi}", style="cyan")
             console.print(f"   • License: {license_info}", style="cyan")
@@ -231,19 +244,21 @@ class OpenESMDatasetList:
     access methods and batch operations.
     """
 
-    def __init__(self, datasets: dict[str, OpenESMDataset]):
+    def __init__(self, datasets: dict[str, OpenESMDataset], metadata_version: str):
         """Initialize a dataset list.
 
         Args:
             datasets: Dictionary mapping dataset IDs to OpenESMDataset objects
+            metadata_version: Version of metadata catalog used
         """
         self.datasets = datasets
+        self.metadata_version = metadata_version
 
     def __getitem__(self, key: str) -> OpenESMDataset:
         """Get a dataset by ID."""
         return self.datasets[key]
 
-    def __iter__(self):
+    def __iter__(self) -> Any:
         """Iterate over dataset IDs."""
         return iter(self.datasets)
 
@@ -251,21 +266,22 @@ class OpenESMDatasetList:
         """Number of datasets."""
         return len(self.datasets)
 
-    def keys(self):
+    def keys(self) -> Any:
         """Get dataset IDs."""
         return self.datasets.keys()
 
-    def values(self):
+    def values(self) -> Any:
         """Get dataset objects."""
         return self.datasets.values()
 
-    def items(self):
+    def items(self) -> Any:
         """Get (ID, dataset) pairs."""
         return self.datasets.items()
 
     def __repr__(self) -> str:
         """String representation."""
-        return f"OpenESMDatasetList({list(self.datasets.keys())})"
+        keys = list(self.datasets.keys())
+        return f"OpenESMDatasetList({keys}, metadata_version='{self.metadata_version}')"
 
     def __str__(self) -> str:
         """User-friendly string representation matching R package style."""
@@ -311,6 +327,7 @@ class OpenESMDatasetList:
 def get_dataset(
     dataset_id: Union[str, list[str]],
     version: str = "latest",
+    metadata_version: str = "latest",
     cache: bool = True,
     path: Union[str, Path, None] = None,
     force_download: bool = False,
@@ -327,6 +344,7 @@ def get_dataset(
         dataset_id: String or list of dataset IDs. Use list_datasets() to see
             available datasets.
         version: Dataset version to download. Default is "latest".
+        metadata_version: Version of metadata catalog to use. Default is "latest".
         cache: If True, uses cached version if available. Default is True.
         path: Custom download path. If None, files are cached in user's cache directory.
         force_download: If True, forces re-download even if cached version exists.
@@ -344,11 +362,16 @@ def get_dataset(
         >>> # Download a single dataset
         >>> dataset = get_dataset("0001")
         >>>
+        >>> # Download with specific versions for reproducibility
+        >>> dataset = get_dataset("0001", version="1.0.0", metadata_version="1.0.0")
+        >>>
         >>> # Access the data
         >>> print(dataset.data.head())
         >>>
-        >>> # View metadata
+        >>> # View metadata and version info
         >>> print(dataset.metadata)
+        >>> print(f"Dataset version: {dataset.dataset_version}")
+        >>> print(f"Metadata version: {dataset.metadata_version}")
         >>>
         >>> # Download multiple datasets
         >>> datasets = get_dataset(["0001", "0002"])
@@ -359,11 +382,11 @@ def get_dataset(
     # handle multiple datasets
     if isinstance(dataset_id, list):
         return _get_multiple_datasets(
-            dataset_id, version, cache, force_download, sandbox, quiet
+            dataset_id, version, metadata_version, cache, force_download, sandbox, quiet
         )
 
-    # get dataset catalog
-    all_datasets = list_datasets()
+    # get dataset catalog using specified metadata version
+    all_datasets = list_datasets(metadata_version=metadata_version)
 
     # extract first sequence of digits from dataset_id
     original_dataset_id = str(dataset_id).strip()
@@ -394,28 +417,20 @@ def get_dataset(
 
     author_lower = dataset_info["first_author"].lower()
 
-    # get metadata from github
-    metadata_gh_folder = f"{dataset_info['dataset_id']}_{author_lower}/"
-    metadata_gh_path = f"{dataset_info['dataset_id']}_{author_lower}_metadata.json"
-    metadata_url = (
-        "https://raw.githubusercontent.com/bsiepe/openesm-metadata/main/datasets/"
-        f"{metadata_gh_folder}{metadata_gh_path}"
-    )
+    # get metadata using Zenodo infrastructure (same as list_datasets uses)
+    metadata_path = download_metadata_from_zenodo(metadata_version=metadata_version)
+    metadata_dict = read_json_safe(metadata_path)
 
-    # cache metadata
-    local_metadata_path = get_cache_path(
-        dataset_id,
-        filename=metadata_gh_path,
-        type_="metadata",
-        version="latest",  # metadata is not version specific
-    )
+    # extract the specific dataset metadata
+    specific_datasets = metadata_dict.get("datasets", [])
+    specific_meta_raw = None
+    for dataset_meta in specific_datasets:
+        if dataset_meta.get("dataset_id") == dataset_id:
+            specific_meta_raw = dataset_meta
+            break
 
-    if not local_metadata_path.exists() or force_download:
-        if not quiet:
-            msg_info(f"Downloading metadata for dataset {dataset_id}")
-        download_with_progress(metadata_url, local_metadata_path)
-
-    specific_meta_raw = read_json_safe(local_metadata_path)
+    if specific_meta_raw is None:
+        raise ValueError(f"Dataset {dataset_id} not found in metadata")
 
     # get concept DOI from metadata
     zenodo_doi = specific_meta_raw.get("zenodo_doi")
@@ -450,7 +465,13 @@ def get_dataset(
     if not quiet:
         msg_success(f"Loading dataset {dataset_id} version {actual_version}")
 
-    data = pl.read_csv(local_data_path, separator="\t")
+    data = pl.read_csv(
+        local_data_path,
+        separator="\t",
+        null_values=["NA", ""],
+        # increase schema inference length for large datasets
+        infer_schema_length=10000,
+    )
 
     # format metadata for cleaner output
     formatted_meta = process_specific_metadata(specific_meta_raw)
@@ -460,7 +481,8 @@ def get_dataset(
         data=data,
         metadata=formatted_meta,
         dataset_id=dataset_id,
-        version=actual_version,
+        dataset_version=actual_version,
+        metadata_version=metadata_version,
     )
 
     # print dataset info unless silenced
@@ -473,6 +495,7 @@ def get_dataset(
 def _get_multiple_datasets(
     dataset_ids: list[str],
     version: str,
+    metadata_version: str,
     cache: bool,
     force_download: bool,
     sandbox: bool,
@@ -483,6 +506,7 @@ def _get_multiple_datasets(
     Args:
         dataset_ids: List of dataset IDs to download
         version: Dataset version
+        metadata_version: Metadata version
         cache: Whether to use cache
         force_download: Whether to force re-download
         sandbox: Whether to use sandbox
@@ -501,6 +525,7 @@ def _get_multiple_datasets(
         dataset = get_dataset(
             dataset_id,
             version=version,
+            metadata_version=metadata_version,
             cache=cache,
             force_download=force_download,
             sandbox=sandbox,
@@ -513,7 +538,7 @@ def _get_multiple_datasets(
             raise TypeError(f"Expected OpenESMDataset, got {type(dataset)}")
 
     # create dataset list
-    dataset_list = OpenESMDatasetList(datasets)
+    dataset_list = OpenESMDatasetList(datasets, metadata_version)
 
     # print summary unless silenced
     if not quiet:

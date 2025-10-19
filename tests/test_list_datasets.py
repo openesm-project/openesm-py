@@ -2,7 +2,6 @@
 
 import json
 import sys
-import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -109,33 +108,51 @@ def test_process_raw_datasets_list_schema_error(
     assert result.shape[0] == 2
 
 
-@patch("openesm.list_datasets.get_cache_dir")
-@patch("openesm.list_datasets.time.time")
-@patch("openesm.list_datasets.msg_info")
+@patch("openesm.list_datasets.download_metadata_from_zenodo")
 def test_list_datasets_use_cache(
-    mock_msg_info,
-    mock_time,
-    mock_get_cache_dir,
+    mock_download_metadata,
     temp_cache_dir,
     sample_raw_datasets_list,
 ):
-    """Test list_datasets uses cached file when recent enough."""
-    mock_get_cache_dir.return_value = temp_cache_dir
-
-    # Create a cached index file
+    """Test list_datasets works with caching (simplified test)."""
+    # Create a test JSON file
     index_path = temp_cache_dir / "datasets.json"
     with open(index_path, "w") as f:
         json.dump(sample_raw_datasets_list, f)
 
-    # Mock current time to make file appear recent (less than 24 hours old)
-    file_mtime = index_path.stat().st_mtime
-    mock_time.return_value = file_mtime + 3600  # 1 hour later
+    # Mock download_metadata_from_zenodo to return our test file
+    mock_download_metadata.return_value = index_path
 
     result = list_datasets()
 
-    # Should use cache
-    mock_msg_info.assert_called_with(
-        "Using cached dataset index (less than 24 hours old)."
+    # Should call download_metadata_from_zenodo once
+    mock_download_metadata.assert_called_once()
+
+    # Should return processed DataFrame
+    assert isinstance(result, pl.DataFrame)
+    assert result.shape[0] == 2
+
+
+@patch("openesm.list_datasets.download_metadata_from_zenodo")
+def test_list_datasets_download_fresh(
+    mock_download_metadata,
+    temp_cache_dir,
+    sample_raw_datasets_list,
+):
+    """Test list_datasets downloads fresh data with cache_hours=0."""
+    # Create a test JSON file
+    index_path = temp_cache_dir / "datasets.json"
+    with open(index_path, "w") as f:
+        json.dump(sample_raw_datasets_list, f)
+
+    # Mock download_metadata_from_zenodo to return our test file
+    mock_download_metadata.return_value = index_path
+
+    result = list_datasets(cache_hours=0)
+
+    # Should call download_metadata_from_zenodo with cache_hours=0
+    mock_download_metadata.assert_called_once_with(
+        metadata_version="latest", cache_hours=0
     )
 
     # Should return processed DataFrame
@@ -143,120 +160,53 @@ def test_list_datasets_use_cache(
     assert result.shape[0] == 2
 
 
-@patch("openesm.list_datasets.get_cache_dir")
-@patch("openesm.list_datasets.time.time")
-@patch("openesm.list_datasets.download_with_progress")
-@patch("openesm.list_datasets.msg_info")
-def test_list_datasets_download_fresh(
-    mock_msg_info,
-    mock_download,
-    mock_time,
-    mock_get_cache_dir,
+@patch("openesm.list_datasets.download_metadata_from_zenodo")
+def test_list_datasets_no_cache_file(
+    mock_download_metadata,
     temp_cache_dir,
     sample_raw_datasets_list,
 ):
-    """Test list_datasets downloads fresh copy when cache is old."""
-    mock_get_cache_dir.return_value = temp_cache_dir
-
-    # Create an old cached index file
+    """Test list_datasets downloads when called without existing cache."""
+    # Create a test JSON file
     index_path = temp_cache_dir / "datasets.json"
     with open(index_path, "w") as f:
-        json.dump({"datasets": []}, f)
+        json.dump(sample_raw_datasets_list, f)
 
-    # Mock current time to make file appear old (more than 24 hours)
-    file_mtime = index_path.stat().st_mtime
-    mock_time.return_value = file_mtime + (25 * 3600)  # 25 hours later
-
-    # Mock the download to write new content
-    def mock_download_side_effect(url, dest_path):
-        with open(dest_path, "w") as f:
-            json.dump(sample_raw_datasets_list, f)
-
-    mock_download.side_effect = mock_download_side_effect
+    # Mock download_metadata_from_zenodo to return our test file
+    mock_download_metadata.return_value = index_path
 
     result = list_datasets()
 
-    # Should download fresh copy
-    mock_msg_info.assert_called_with("Downloading fresh dataset index from GitHub.")
-    mock_download.assert_called_once()
-
-    # Check the URL used for download
-    call_args = mock_download.call_args
-    assert "raw.githubusercontent.com" in call_args[0][0]
-    assert "datasets.json" in call_args[0][0]
+    # Should call download_metadata_from_zenodo once
+    mock_download_metadata.assert_called_once()
 
     # Should return processed DataFrame
     assert isinstance(result, pl.DataFrame)
     assert result.shape[0] == 2
 
 
-@patch("openesm.list_datasets.get_cache_dir")
-@patch("openesm.list_datasets.download_with_progress")
-@patch("openesm.list_datasets.msg_info")
-def test_list_datasets_no_cache_file(
-    mock_msg_info,
-    mock_download,
-    mock_get_cache_dir,
-    temp_cache_dir,
-    sample_raw_datasets_list,
-):
-    """Test list_datasets downloads when no cache file exists."""
-    mock_get_cache_dir.return_value = temp_cache_dir
-
-    # Ensure no cache file exists
-    index_path = temp_cache_dir / "datasets.json"
-    if index_path.exists():
-        index_path.unlink()
-
-    # Mock the download
-    def mock_download_side_effect(url, dest_path):
-        with open(dest_path, "w") as f:
-            json.dump(sample_raw_datasets_list, f)
-
-    mock_download.side_effect = mock_download_side_effect
-
-    result = list_datasets()
-
-    # Should download fresh copy
-    mock_msg_info.assert_called_with("Downloading fresh dataset index from GitHub.")
-    mock_download.assert_called_once()
-
-    # Should return processed DataFrame
-    assert isinstance(result, pl.DataFrame)
-    assert result.shape[0] == 2
-
-
-@patch("openesm.list_datasets.get_cache_dir")
-@patch("openesm.list_datasets.download_with_progress")
-@patch("openesm.list_datasets.msg_info")
+@patch("openesm.list_datasets.download_metadata_from_zenodo")
 def test_list_datasets_force_download(
-    mock_msg_info,
-    mock_download,
-    mock_get_cache_dir,
+    mock_download_metadata,
     temp_cache_dir,
     sample_raw_datasets_list,
 ):
     """Test list_datasets with cache_hours=0 forces download."""
-    mock_get_cache_dir.return_value = temp_cache_dir
-
-    # Create a recent cached index file
+    # Create a test JSON file
     index_path = temp_cache_dir / "datasets.json"
     with open(index_path, "w") as f:
-        json.dump({"datasets": []}, f)
+        json.dump(sample_raw_datasets_list, f)
 
-    # Mock the download
-    def mock_download_side_effect(url, dest_path):
-        with open(dest_path, "w") as f:
-            json.dump(sample_raw_datasets_list, f)
-
-    mock_download.side_effect = mock_download_side_effect
+    # Mock download_metadata_from_zenodo to return our test file
+    mock_download_metadata.return_value = index_path
 
     # Force download with cache_hours=0
     result = list_datasets(cache_hours=0)
 
-    # Should download even though cache exists
-    mock_msg_info.assert_called_with("Downloading fresh dataset index from GitHub.")
-    mock_download.assert_called_once()
+    # Should call download_metadata_from_zenodo with cache_hours=0
+    mock_download_metadata.assert_called_once_with(
+        metadata_version="latest", cache_hours=0
+    )
 
     # Should return processed DataFrame
     assert isinstance(result, pl.DataFrame)
@@ -293,49 +243,33 @@ def test_process_features_string_conversion():
     assert features[3] is None
 
 
+@patch("openesm.list_datasets.download_metadata_from_zenodo")
 def test_list_datasets_integration_with_custom_cache_hours(
-    temp_cache_dir, sample_raw_datasets_list
+    mock_download_metadata, temp_cache_dir, sample_raw_datasets_list
 ):
     """Integration test with custom cache_hours parameter."""
-    # This test doesn't use mocks to test the integration
-    with (
-        patch("openesm.list_datasets.get_cache_dir") as mock_get_cache_dir,
-        patch("openesm.list_datasets.download_with_progress") as mock_download,
-    ):
-        mock_get_cache_dir.return_value = temp_cache_dir
+    # Create a test JSON file
+    index_path = temp_cache_dir / "datasets.json"
+    with open(index_path, "w") as f:
+        json.dump(sample_raw_datasets_list, f)
 
-        # Create an index file that's 2 hours old
-        index_path = temp_cache_dir / "datasets.json"
-        with open(index_path, "w") as f:
-            json.dump(sample_raw_datasets_list, f)
+    # Mock download_metadata_from_zenodo to return our test file
+    mock_download_metadata.return_value = index_path
 
-        # Artificially age the file using os.utime
-        import os
+    # Test with cache_hours=1
+    result1 = list_datasets(cache_hours=1)
+    mock_download_metadata.assert_called_with(metadata_version="latest", cache_hours=1)
 
-        old_time = time.time() - (2 * 3600)  # 2 hours ago
-        os.utime(index_path, (old_time, old_time))
+    # Reset mock
+    mock_download_metadata.reset_mock()
 
-        # Mock download
-        def mock_download_side_effect(url, dest_path):
-            with open(dest_path, "w") as f:
-                json.dump(sample_raw_datasets_list, f)
+    # Test with cache_hours=3
+    result2 = list_datasets(cache_hours=3)
+    mock_download_metadata.assert_called_with(metadata_version="latest", cache_hours=3)
 
-        mock_download.side_effect = mock_download_side_effect
-
-        # Test with cache_hours=1 (should download because file is 2 hours old)
-        result1 = list_datasets(cache_hours=1)
-        assert mock_download.call_count == 1
-
-        # Reset mock
-        mock_download.reset_mock()
-
-        # Test with cache_hours=3 (should use cache because file is only 2 hours old)
-        result2 = list_datasets(cache_hours=3)
-        mock_download.assert_not_called()
-
-        # Both should return valid DataFrames
-        assert isinstance(result1, pl.DataFrame)
-        assert isinstance(result2, pl.DataFrame)
+    # Both should return valid DataFrames
+    assert isinstance(result1, pl.DataFrame)
+    assert isinstance(result2, pl.DataFrame)
 
 
 def test_process_features_with_string_fallback():

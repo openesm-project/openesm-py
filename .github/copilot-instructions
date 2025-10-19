@@ -2,7 +2,7 @@
 
 You are an expert software engineer specializing in Python development. Your task is to provide detailed instructions for developing a Python package that interacts with datasets in the openESM database. The package should follow best practices in Python development, including type hints, testing, and code formatting.
 
-Write clear instructions, focus on being concise, and perform incremental changes. Only add inline comments when necessary, and use lower case comments. 
+Write clear instructions, focus on being concise, and perform incremental changes. Only add inline comments when necessary, and use lower case comments.
 
 ## Project Overview
 
@@ -17,7 +17,7 @@ Python equivalent of openESM R package for downloading psychology Experience Sam
 
 ### Data Flow
 1. Fetch metadata from GitHub JSON repository
-2. Resolve Zenodo DOI to download TSV files  
+2. Resolve Zenodo DOI to download TSV files
 3. Parse TSV into polars DataFrame
 4. Wrap in OpenESMDataset class with metadata
 5. Cache locally using platformdirs
@@ -49,7 +49,7 @@ Python equivalent of openESM R package for downloading psychology Experience Sam
 - Cache downloaded TSV files using platformdirs for cross-platform cache directories
 - Use method chaining style for data operations
 - Type hints required for all functions
-- Follow ruff formatting standards 
+- Follow ruff formatting standards
 
 ### File I/O Rules
 - Read TSV files with `pl.read_csv(path, separator="\t")`
@@ -75,7 +75,7 @@ Python equivalent of openESM R package for downloading psychology Experience Sam
 class OpenESMDataset:
     data: pl.DataFrame
     metadata: dict
-    
+
     def cite(self) -> str
     def license(self) -> str
 ```

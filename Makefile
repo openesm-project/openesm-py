@@ -24,7 +24,7 @@ format:
 	uv run ruff check --fix .
 
 type-check:
-	uv run mypy src/openesm 
+	uv run mypy src/openesm
 
 security:
 	uv run safety scan

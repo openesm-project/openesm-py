@@ -1,28 +1,29 @@
 """List available ESM datasets from openESM repository."""
 
-import time
 from typing import Any
 
 import polars as pl
 
 from .utils import (
-    download_with_progress,
-    get_cache_dir,
-    msg_info,
+    download_metadata_from_zenodo,
     msg_warn,
     process_specific_metadata,
     read_json_safe,
 )
 
 
-def list_datasets(cache_hours: float = 24) -> pl.DataFrame:
+def list_datasets(
+    metadata_version: str = "latest", cache_hours: float = 24
+) -> pl.DataFrame:
     """List available ESM datasets from openESM repository.
 
     Retrieves a list of available Experience Sampling Method (ESM) datasets from
-    the openESM metadata repository. Returns a polars DataFrame with
+    the openESM metadata repository hosted on Zenodo. Returns a polars DataFrame with
     dataset information and metadata that can be used with get_dataset().
 
     Args:
+        metadata_version: Version of metadata catalog to use. Default is "latest".
+            Use specific versions like "1.0.0" for reproducible results.
         cache_hours: Number of hours to consider the cached dataset
             index valid. Default is 24. Set to 0 to force fresh download.
 
@@ -54,8 +55,11 @@ def list_datasets(cache_hours: float = 24) -> pl.DataFrame:
         - features: Feature information for each dataset
 
     Examples:
-        >>> # Get list of all available datasets
+        >>> # Get list of all available datasets (latest metadata)
         >>> datasets = list_datasets()
+        >>>
+        >>> # Use specific metadata version for reproducibility
+        >>> datasets = list_datasets(metadata_version="1.0.0")
         >>>
         >>> # Force fresh download of index
         >>> fresh_list = list_datasets(cache_hours=0)
@@ -63,27 +67,13 @@ def list_datasets(cache_hours: float = 24) -> pl.DataFrame:
         >>> # Use dataset IDs with get_dataset()
         >>> # dataset = get_dataset(datasets['dataset_id'][0])
     """
-    # define the path to the cached master index file
-    # this file lives in the root of the cache directory
-    index_dir = get_cache_dir()
-    index_path = index_dir / "datasets.json"
+    # download metadata from Zenodo (handles caching internally)
+    datasets_json_path = download_metadata_from_zenodo(
+        metadata_version=metadata_version, cache_hours=cache_hours
+    )
 
-    # determine if we need to download a fresh copy
-    use_cache = False
-    if index_path.exists():
-        file_age_hours = (time.time() - index_path.stat().st_mtime) / 3600
-        if file_age_hours < cache_hours:
-            msg_info(f"Using cached dataset index (less than {cache_hours} hours old).")
-            use_cache = True
-
-    if not use_cache:
-        # otherwise, download a fresh copy
-        msg_info("Downloading fresh dataset index from GitHub.")
-        index_url = "https://raw.githubusercontent.com/bsiepe/openesm-metadata/refs/heads/main/datasets.json"
-        download_with_progress(index_url, index_path)
-
-    # read the file and process it
-    raw_list = read_json_safe(index_path)
+    # read file and process it
+    raw_list = read_json_safe(datasets_json_path)
     return _process_raw_datasets_list(raw_list)
 
 
@@ -98,7 +88,7 @@ def _process_raw_datasets_list(raw_list: dict[str, Any]) -> pl.DataFrame:
     Returns:
         A polars DataFrame with processed dataset metadata
     """
-    datasets_list = raw_list["datasets"]
+    datasets_list = raw_list.get("datasets", [])
 
     # process each dataset using the same function used by get_dataset()
     processed_datasets = []

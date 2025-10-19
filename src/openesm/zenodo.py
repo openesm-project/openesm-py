@@ -37,9 +37,13 @@ def resolve_zenodo_version(
     if not versions:
         raise ValueError(f"No versions found for DOI {zenodo_doi}")
 
+    # sort versions by date descending (most recent first)
+    versions.sort(key=lambda v: v.get("date", ""), reverse=True)
+
     if version == "latest":
-        # return the latest version (first in the list from API)
-        return versions[0]["version"]
+        # return the latest version (most recent by publication date)
+        latest_version: str = versions[0]["version"]
+        return latest_version
     else:
         # check if requested version exists
         version_tags = [v["version"] for v in versions]
@@ -127,6 +131,100 @@ def download_from_zenodo(
     return dest_path
 
 
+def download_files_from_zenodo(
+    zenodo_doi: str,
+    version: str,
+    dest_dir: Path,
+    file_patterns: Optional[list[str]] = None,
+    sandbox: bool = False,
+) -> list[Path]:
+    """Download files from Zenodo by pattern.
+
+    Downloads files matching specified patterns from a Zenodo record.
+
+    Args:
+        zenodo_doi: Zenodo concept DOI
+        version: Specific version tag (e.g., "1.0.0")
+        dest_dir: Destination directory
+        file_patterns: List of file patterns to match (e.g., ["*.zip", "*.json"])
+        sandbox: Whether to use Zenodo sandbox
+
+    Returns:
+        List of paths to downloaded files
+
+    Raises:
+        ValueError: If version not found or no matching files
+        requests.RequestException: If download fails
+    """
+    import fnmatch
+
+    # get available versions to find the record ID for the specific version
+    record_id = _extract_record_id(zenodo_doi)
+    versions = _get_zenodo_versions(record_id, sandbox=sandbox)
+
+    # find the specific version
+    version_match = None
+    for v in versions:
+        if v["version"] == version:
+            version_match = v
+            break
+
+    if version_match is None:
+        version_tags = [v["version"] for v in versions]
+        available_versions = ", ".join(version_tags)
+        raise ValueError(
+            f"Version {version} not found. Available versions: {available_versions}"
+        )
+
+    # get the specific record ID for this version
+    specific_record_id = version_match["id"]
+
+    # get files list from the record
+    base_url = "https://sandbox.zenodo.org" if sandbox else "https://zenodo.org"
+    api_url = f"{base_url}/api/records/{specific_record_id}"
+
+    response = requests.get(api_url, timeout=30)
+    response.raise_for_status()
+    record_data = response.json()
+
+    # get available files
+    available_files = record_data.get("files", [])
+
+    if file_patterns is None:
+        file_patterns = ["*"]  # match all files if no patterns specified
+
+    # find matching files
+    matching_files = []
+    for file_info in available_files:
+        filename = file_info["key"]  # Zenodo API uses "key" for filename
+        for pattern in file_patterns:
+            if fnmatch.fnmatch(filename, pattern):
+                matching_files.append(file_info)
+                break
+
+    if not matching_files:
+        available_filenames = [f["key"] for f in available_files]
+        raise ValueError(
+            f"No files matching patterns {file_patterns}. "
+            f"Available files: {available_filenames}"
+        )
+
+    # download matching files
+    downloaded_files = []
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    for file_info in matching_files:
+        filename = file_info["key"]
+        download_url = file_info["links"]["self"]  # direct download URL
+        dest_path = dest_dir / filename
+
+        msg_info(f"Downloading {filename} from Zenodo (version {version})")
+        download_with_progress(download_url, dest_path)
+        downloaded_files.append(dest_path)
+
+    return downloaded_files
+
+
 def _extract_record_id(zenodo_doi: str) -> str:
     """Extract record ID from Zenodo DOI.
 
@@ -208,20 +306,13 @@ def _get_zenodo_versions(record_id: str, sandbox: bool = False) -> list[dict[str
                     "id": str(hit["id"]),
                     "version": version,
                     "doi": meta.get("doi", hit.get("doi")),
+                    "publication_date": meta.get("publication_date", ""),
                 }
             )
 
-        # sort by version, with explicit versions first, then by publication date
-        def version_sort_key(v):
-            version = v["version"]
-            # prioritize explicit version numbers
-            if version and version != "unknown" and not version.startswith("20"):
-                return (0, version)
-            else:
-                # use publication date as secondary sort
-                return (1, version)
-
-        versions.sort(key=version_sort_key, reverse=True)
+        # sort by publication date descending (most recent first)
+        # this ensures "latest" always returns the most recent version
+        versions.sort(key=lambda v: v["publication_date"], reverse=True)
 
         return versions
 
