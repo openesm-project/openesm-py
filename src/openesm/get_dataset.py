@@ -1,4 +1,4 @@
-"""Download ESM datasets from OpenESM repository."""
+"""Download ESM datasets from openESM repository."""
 
 from pathlib import Path
 from typing import Any, Union
@@ -334,10 +334,10 @@ def get_dataset(
     sandbox: bool = False,
     quiet: bool = False,
 ) -> Union[OpenESMDataset, OpenESMDatasetList]:
-    """Download ESM dataset(s) from OpenESM repository.
+    """Download ESM dataset(s) from openESM repository.
 
     Downloads one or more Experience Sampling Method (ESM) datasets from the
-    OpenESM repository hosted on Zenodo. Returns an OpenESMDataset object or
+    openESM repository hosted on Zenodo. Returns an OpenESMDataset object or
     OpenESMDatasetList containing the dataset(s) and associated metadata.
 
     Args:

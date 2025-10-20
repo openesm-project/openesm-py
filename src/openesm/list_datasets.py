@@ -52,7 +52,7 @@ def list_datasets(
         - participants: Participant information
         - coding_file: Coding file information
         - additional_comments: Additional notes
-        - features: Feature information for each dataset
+        - features: Variable-specific information for each dataset
 
     Examples:
         >>> # Get list of all available datasets (latest metadata)
