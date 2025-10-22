@@ -1,7 +1,7 @@
 # openESM Python Package
 
-[![CI](https://github.com/bsiepe/openesm-py/workflows/CI/badge.svg)](https://github.com/bsiepe/openesm-py/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/bsiepe/openesm-py/branch/main/graph/badge.svg)](https://codecov.io/gh/bsiepe/openesm-py)
+[![CI](https://github.com/openesm-project/openesm-py/workflows/CI/badge.svg)](https://github.com/openesm-project/openesm-py/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/openesm-project/openesm-py/branch/main/graph/badge.svg)](https://codecov.io/gh/openesm-project/openesm-py)
 [![Python versions](https://img.shields.io/pypi/pyversions/openesm.svg)](https://pypi.org/project/openesm/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
