@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
+## [0.1.1] - 2025-10-29
+- fix: normalize author in get_dataset() by removing spaces when constructing filenames (improves matching to Zenodo files)
+
 ## [0.1.0] - Initial Release
 
 ### Added

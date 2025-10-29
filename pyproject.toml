@@ -1,6 +1,6 @@
 [project]
 name = "openesm"
-version = "0.1.0"
+version = "0.1.1"
 description = "Access openESM experience sampling datasets"
 authors = [{name = "Björn S. Siepe", email = "bjoernsiepe@gmail.com"}]
 readme = "README.md"

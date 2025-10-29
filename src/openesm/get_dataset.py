@@ -416,6 +416,8 @@ def get_dataset(
     )
 
     author_lower = dataset_info["first_author"].lower()
+    # remove spaces from author name
+    author_lower = author_lower.replace(" ", "")
 
     # get metadata using Zenodo infrastructure (same as list_datasets uses)
     metadata_path = download_metadata_from_zenodo(metadata_version=metadata_version)
