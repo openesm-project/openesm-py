@@ -55,3 +55,12 @@ publish:
 
 ci-local: clean dev check
 	@echo "Local CI simulation complete!"
+
+docs:
+	uv run mkdocs build
+
+docs-serve:
+	uv run mkdocs serve
+
+docs-deploy:
+	uv run mkdocs gh-deploy --force

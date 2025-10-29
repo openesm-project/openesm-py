@@ -4,7 +4,7 @@ This document describes the CI/CD pipeline setup for the openESM Python package.
 
 ## Overview
 
-The CI/CD pipeline provides automated testing, quality checks, and publishing for the openESM package. It's designed to be robust yet simple, focusing on the most essential features.
+The CI/CD pipeline provides automated testing, quality checks, and publishing for the openESM package. 
 
 ## Components
 
@@ -157,10 +157,6 @@ The release workflow uses GitHub environments for security:
 
 ## Troubleshooting
 
-### Common Issues
-1. **Type Checking Failures:** Currently non-blocking, will be improved in future releases
-2. **Coverage Drops:** Add tests to maintain 98% coverage
-3. **Dependency Conflicts:** Review Dependabot PRs carefully
 
 ### Getting Help
 - Check GitHub Actions logs for detailed error information
