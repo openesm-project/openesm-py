@@ -268,33 +268,27 @@ def _get_zenodo_versions(record_id: str, sandbox: bool = False) -> list[dict[str
     base_url = "https://sandbox.zenodo.org/api" if sandbox else "https://zenodo.org/api"
 
     try:
-        # Step 1: Get the conceptrecid from any record in the concept
+        # Get the record to find the versions link
         single_record_url = f"{base_url}/records/{record_id}"
         response = requests.get(single_record_url, timeout=30)
         response.raise_for_status()
         single_record_data = response.json()
-        conceptrecid = single_record_data.get("conceptrecid")
 
-        if not conceptrecid:
-            raise ValueError(f"Could not find conceptrecid for record {record_id}")
+        # Use the versions link from the API response
+        versions_url = single_record_data.get("links", {}).get("versions")
 
-        # Step 2: Search for all versions using the conceptrecid
-        search_url = f"{base_url}/records"
-        params: dict[str, str] = {
-            "q": f'conceptrecid:"{conceptrecid}"',
-            "all_versions": "true",
-            "sort": "version",
-            "size": "100",
-        }
+        if not versions_url:
+            raise ValueError(f"Could not find versions link for record {record_id}")
 
-        response = requests.get(search_url, params=params, timeout=30)
+        # Get all versions
+        response = requests.get(versions_url, timeout=30)
         response.raise_for_status()
         data = response.json()
 
         # extract version information
         versions = []
         for hit in data.get("hits", {}).get("hits", []):
-            meta = hit["metadata"]
+            meta = hit.get("metadata", {})
             # use explicit version if available, otherwise use publication date
             version = meta.get("version")
             if version is None:

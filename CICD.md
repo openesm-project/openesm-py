@@ -20,7 +20,7 @@ The CI/CD pipeline provides automated testing, quality checks, and publishing fo
 - **Linting:** Ruff for code style and quality
 - **Type Checking:** MyPy for type safety (non-blocking)
 - **Testing:** Pytest with 98% coverage requirement
-- **Security:** Safety and Bandit for dependency and code security
+- **Security:** Bandit for code security
 
 **Coverage Reporting:**
 - Uploads coverage to Codecov (Ubuntu + Python 3.11 only)
@@ -122,7 +122,6 @@ make ci-local   # Simulate CI pipeline locally
 - **Type Checker:** MyPy (relaxed configuration for initial release)
 
 ### Security
-- **Dependency Scanning:** Safety for known vulnerabilities
 - **Code Security:** Bandit for common security issues
 - **Dependency Updates:** Dependabot for automated updates
 

@@ -22,3 +22,6 @@ htmlcov/
 # Documentation
 site/
 DOCS.md
+
+# GitHub
+.github/copilot-instructions

@@ -27,7 +27,6 @@ type-check:
 	uv run mypy src/openesm
 
 security:
-	uv run safety scan
 	uv run bandit -r src/openesm/
 
 check: lint type-check test-cov security

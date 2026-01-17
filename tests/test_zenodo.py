@@ -30,6 +30,7 @@ def sample_zenodo_record():
             "version": "1.0.0",
             "publication_date": "2023-01-15",
         },
+        "links": {"versions": "https://zenodo.org/api/records/12345/versions"},
     }
 
 
@@ -119,9 +120,10 @@ class TestGetZenodoVersions:
                 f"https://zenodo.org/api/records/{record_id}", json=sample_zenodo_record
             )
 
-            # Mock the search API call
+            # Mock the versions API call
             mock_requests.get(
-                "https://zenodo.org/api/records", json=sample_versions_response
+                "https://zenodo.org/api/records/12345/versions",
+                json=sample_versions_response,
             )
 
             result = _get_zenodo_versions(record_id)
@@ -137,15 +139,22 @@ class TestGetZenodoVersions:
         """Test version retrieval from sandbox."""
         record_id = "12345"
 
+        # Update sample record for sandbox
+        sandbox_record = sample_zenodo_record.copy()
+        sandbox_record["links"] = {
+            "versions": "https://sandbox.zenodo.org/api/records/12345/versions"
+        }
+
         with requests_mock.Mocker() as mock_requests:
             # Mock sandbox URLs
             mock_requests.get(
                 f"https://sandbox.zenodo.org/api/records/{record_id}",
-                json=sample_zenodo_record,
+                json=sandbox_record,
             )
 
             mock_requests.get(
-                "https://sandbox.zenodo.org/api/records", json=sample_versions_response
+                "https://sandbox.zenodo.org/api/records/12345/versions",
+                json=sample_versions_response,
             )
 
             result = _get_zenodo_versions(record_id, sandbox=True)
@@ -153,18 +162,18 @@ class TestGetZenodoVersions:
             assert len(result) == 2
             assert result[0]["version"] == "1.0.0"
 
-    def test_get_versions_no_conceptrecid(self):
-        """Test error when conceptrecid is missing."""
+    def test_get_versions_no_links(self):
+        """Test error when versions link is missing."""
         record_id = "12345"
 
         with requests_mock.Mocker() as mock_requests:
-            # Mock record without conceptrecid
+            # Mock record without links
             mock_requests.get(
                 f"https://zenodo.org/api/records/{record_id}",
-                json={"id": 12345, "metadata": {}},
+                json={"id": 12345, "metadata": {}, "links": {}},
             )
 
-            with pytest.raises(ValueError, match="Could not find conceptrecid"):
+            with pytest.raises(ValueError, match="Could not find versions link"):
                 _get_zenodo_versions(record_id)
 
     def test_get_versions_api_error(self):
@@ -187,11 +196,12 @@ class TestGetZenodoVersions:
         record_id = "12345"
 
         with requests_mock.Mocker() as mock_requests:
-            # Record with conceptrecid
+            # Record with conceptrecid and links
             sample_record = {
                 "id": 12345,
                 "conceptrecid": 12340,
                 "metadata": {"doi": "10.5072/zenodo.12345"},
+                "links": {"versions": "https://zenodo.org/api/records/12345/versions"},
             }
 
             # Versions response with missing version (should use date)
@@ -215,7 +225,9 @@ class TestGetZenodoVersions:
                 f"https://zenodo.org/api/records/{record_id}", json=sample_record
             )
 
-            mock_requests.get("https://zenodo.org/api/records", json=versions_response)
+            mock_requests.get(
+                "https://zenodo.org/api/records/12345/versions", json=versions_response
+            )
 
             result = _get_zenodo_versions(record_id)
 

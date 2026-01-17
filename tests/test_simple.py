@@ -7,6 +7,7 @@ complex mocking scenarios.
 
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 import polars as pl
 import pytest
@@ -21,8 +22,24 @@ from openesm.get_dataset import OpenESMDataset, OpenESMDatasetList
 class TestListDatasets:
     """Test list_datasets functionality."""
 
-    def test_list_datasets_basic(self):
+    @patch("openesm.list_datasets.read_json_safe")
+    @patch("openesm.list_datasets.download_metadata_from_zenodo")
+    def test_list_datasets_basic(self, mock_download, mock_read):
         """Test basic list_datasets functionality."""
+        # Setup mocks
+        mock_download.return_value = "dummy_path.json"
+        mock_read.return_value = {
+            "datasets": [
+                {
+                    "dataset_id": "0001",
+                    "first_author": "Doe",
+                    "year": 2023,
+                    "title": "Test Dataset",
+                    "dataset_doi": "10.5281/zenodo.1234567",
+                }
+            ]
+        }
+
         datasets = openesm.list_datasets()
 
         # Should return a polars DataFrame
@@ -36,12 +53,31 @@ class TestListDatasets:
         # Should have some datasets
         assert len(datasets) > 0
 
-    def test_list_datasets_with_metadata_version(self):
+    @patch("openesm.list_datasets.read_json_safe")
+    @patch("openesm.list_datasets.download_metadata_from_zenodo")
+    def test_list_datasets_with_metadata_version(self, mock_download, mock_read):
         """Test list_datasets with metadata_version parameter."""
+        # Setup mocks
+        mock_download.return_value = "dummy_path.json"
+        mock_read.return_value = {
+            "datasets": [
+                {
+                    "dataset_id": "0001",
+                    "first_author": "Doe",
+                    "year": 2023,
+                    "title": "Test Dataset",
+                    "dataset_doi": "10.5281/zenodo.1234567",
+                }
+            ]
+        }
+
         datasets = openesm.list_datasets(metadata_version="latest")
 
         assert isinstance(datasets, pl.DataFrame)
         assert len(datasets) > 0
+
+        # Verify mock was called with correct arguments
+        mock_download.assert_called_with(metadata_version="latest", cache_hours=24)
 
 
 class TestOpenESMDataset:
@@ -213,13 +249,21 @@ class TestGetDatasetIntegration:
 class TestErrorHandling:
     """Test error handling."""
 
-    def test_invalid_dataset_id(self):
+    @patch("openesm.get_dataset.list_datasets")
+    def test_invalid_dataset_id(self, mock_list):
         """Test error with invalid dataset ID."""
+        # Mock list_datasets to avoid network call
+        mock_list.return_value = pl.DataFrame({"dataset_id": ["0001"]})
+
         with pytest.raises(ValueError, match="not found"):
             openesm.get_dataset("9999", sandbox=True)
 
-    def test_invalid_dataset_id_format(self):
+    @patch("openesm.get_dataset.list_datasets")
+    def test_invalid_dataset_id_format(self, mock_list):
         """Test error with non-numeric dataset ID."""
+        # Mock list_datasets to avoid network call
+        mock_list.return_value = pl.DataFrame({"dataset_id": ["0001"]})
+
         with pytest.raises(ValueError, match="No numeric dataset ID found"):
             openesm.get_dataset("abc", sandbox=True)
 
