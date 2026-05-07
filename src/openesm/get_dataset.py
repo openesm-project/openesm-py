@@ -17,7 +17,7 @@ from .utils import (
     process_specific_metadata,
     read_json_safe,
 )
-from .zenodo import download_from_zenodo, resolve_zenodo_version
+from .zenodo import download_from_zenodo, get_zenodo_versions
 
 
 class OpenESMDataset:
@@ -326,7 +326,7 @@ class OpenESMDatasetList:
 
 def get_dataset(
     dataset_id: Union[str, list[str]],
-    version: str = "latest",
+    version: Union[str, list[str]] = "latest",
     metadata_version: str = "latest",
     cache: bool = True,
     path: Union[str, Path, None] = None,
@@ -343,7 +343,10 @@ def get_dataset(
     Args:
         dataset_id: String or list of dataset IDs. Use list_datasets() to see
             available datasets.
-        version: Dataset version to download. Default is "latest".
+        version: Dataset version to download. Default is "latest". When downloading
+            multiple datasets, can be a list of the same length as dataset_id to
+            pin each dataset to a specific version. A single non-"latest" version
+            is recycled with a warning.
         metadata_version: Version of metadata catalog to use. Default is "latest".
         cache: If True, uses cached version if available. Default is True.
         path: Custom download path. If None, files are cached in user's cache directory.
@@ -425,7 +428,10 @@ def get_dataset(
     author_lower = author_lower.replace(" ", "")
 
     # get metadata using Zenodo infrastructure (same as list_datasets uses)
+    # download_metadata_from_zenodo resolves "latest" internally; derive the
+    # actual version from the cache path (.../metadata/v<ver>/datasets.json)
     metadata_path = download_metadata_from_zenodo(metadata_version=metadata_version)
+    resolved_metadata_version = metadata_path.parent.name.lstrip("v")
     metadata_dict = read_json_safe(metadata_path)
 
     # extract the specific dataset metadata
@@ -445,8 +451,34 @@ def get_dataset(
     if not zenodo_doi:
         raise ValueError(f"No Zenodo DOI found in metadata for dataset {dataset_id}")
 
-    # resolve actual version if "latest" is requested
-    actual_version = resolve_zenodo_version(zenodo_doi, version, sandbox)
+    # at this point version is always str (list case was dispatched above)
+    if not isinstance(version, str):
+        raise TypeError(f"Expected str for version, got {type(version)}")
+
+    # fetch versions once, then resolve both the actual version tag and its DOI
+    all_versions = get_zenodo_versions(zenodo_doi, sandbox=sandbox)
+    if not all_versions:
+        raise ValueError(f"No versions found for dataset {dataset_id} DOI {zenodo_doi}")
+
+    if version == "latest":
+        actual_version = all_versions[0]["version"]
+    else:
+        if version not in [v["version"] for v in all_versions]:
+            available = ", ".join(v["version"] for v in all_versions)
+            raise ValueError(
+                f"Version {version} not found for dataset {dataset_id}. "
+                f"Available: {available}"
+            )
+        actual_version = version
+
+    version_doi = next(
+        (v["doi"] for v in all_versions if v["version"] == actual_version), None
+    )
+    if not version_doi:
+        raise ValueError(
+            f"Could not resolve version-specific DOI for dataset {dataset_id} "
+            f"version {actual_version}"
+        )
 
     # determine cache/destination path
     filename = f"{dataset_id}_{author_lower}_ts.tsv"
@@ -460,7 +492,7 @@ def get_dataset(
     # download from Zenodo if needed
     if not local_data_path.exists() or force_download:
         download_from_zenodo(
-            zenodo_doi=zenodo_doi,
+            version_doi=version_doi,
             dataset_id=dataset_id,
             author_name=author_lower,
             version=actual_version,
@@ -489,11 +521,17 @@ def get_dataset(
         metadata=formatted_meta,
         dataset_id=dataset_id,
         dataset_version=actual_version,
-        metadata_version=metadata_version,
+        metadata_version=resolved_metadata_version,
     )
 
     # print dataset info unless silenced
     if not quiet:
+        repro_call = (
+            f'openesm.get_dataset("{dataset_id}", '
+            f'metadata_version="{resolved_metadata_version}", '
+            f'version="{actual_version}")'
+        )
+        msg_info(f"For full reproducibility, use:\n{repro_call}")
         print(dataset)
 
     return dataset
@@ -501,7 +539,7 @@ def get_dataset(
 
 def _get_multiple_datasets(
     dataset_ids: list[str],
-    version: str,
+    version: Union[str, list[str]],
     metadata_version: str,
     cache: bool,
     force_download: bool,
@@ -512,7 +550,7 @@ def _get_multiple_datasets(
 
     Args:
         dataset_ids: List of dataset IDs to download
-        version: Dataset version
+        version: Dataset version(s). Single string or list matching dataset_ids length.
         metadata_version: Metadata version
         cache: Whether to use cache
         force_download: Whether to force re-download
@@ -522,16 +560,39 @@ def _get_multiple_datasets(
     Returns:
         OpenESMDatasetList containing the downloaded datasets
     """
+    import warnings
+
+    n = len(dataset_ids)
+
+    # normalise version to a list of length n
+    if isinstance(version, str):
+        if version != "latest":
+            warnings.warn(
+                f"Recycling version '{version}' across all {n} datasets. "
+                "Pass a list of versions to pin each dataset individually.",
+                stacklevel=4,
+            )
+        versions = [version] * n
+    elif isinstance(version, list):
+        if len(version) != n:
+            raise ValueError(
+                f"'version' must be length 1 or the same length as 'dataset_id' "
+                f"({n}), not {len(version)}."
+            )
+        versions = version
+    else:
+        raise TypeError(f"'version' must be a str or list, got {type(version)}")
+
     datasets = {}
 
-    for dataset_id in dataset_ids:
+    for dataset_id, ver in zip(dataset_ids, versions):
         if not quiet:
             msg_info(f"Downloading dataset {dataset_id}")
 
         # download individual dataset in quiet mode
         dataset = get_dataset(
             dataset_id,
-            version=version,
+            version=ver,
             metadata_version=metadata_version,
             cache=cache,
             force_download=force_download,
@@ -548,7 +609,19 @@ def _get_multiple_datasets(
     dataset_list = OpenESMDatasetList(datasets, metadata_version)
 
     # print summary unless silenced
-    if not quiet:
+    if not quiet and datasets:
+        resolved_ids = list(datasets.keys())
+        resolved_dvs = [datasets[did].dataset_version for did in resolved_ids]
+        resolved_mv = datasets[resolved_ids[0]].metadata_version
+
+        ids_repr = '["' + '", "'.join(resolved_ids) + '"]'
+        dvs_repr = '["' + '", "'.join(resolved_dvs) + '"]'
+        repro_call = (
+            f"openesm.get_dataset({ids_repr},\n"
+            f'    metadata_version="{resolved_mv}",\n'
+            f"    version={dvs_repr})"
+        )
+        msg_info(f"For full reproducibility, use:\n{repro_call}")
         print(dataset_list)
 
     return dataset_list

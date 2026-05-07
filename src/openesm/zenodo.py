@@ -56,7 +56,7 @@ def resolve_zenodo_version(
 
 
 def download_from_zenodo(
-    zenodo_doi: str,
+    version_doi: str,
     dataset_id: str,
     author_name: str,
     version: str,
@@ -65,14 +65,13 @@ def download_from_zenodo(
 ) -> Path:
     """Download dataset from Zenodo.
 
-    Downloads a specific dataset file from Zenodo using the record ID and
-    constructs the appropriate download URL based on dataset metadata.
+    Downloads a specific dataset file from Zenodo using the version-specific DOI.
 
     Args:
-        zenodo_doi: Zenodo concept DOI
+        version_doi: Version-specific Zenodo DOI (not the concept DOI)
         dataset_id: Dataset identifier
-        author_name: Author name
-        version: Specific version tag (e.g., "1.0.0")
+        author_name: Author name (already normalised, lowercase, no spaces)
+        version: Specific version tag (e.g., "1.0.0"), used for logging only
         sandbox: Whether to use Zenodo sandbox
         dest_path: Destination path. If None, uses filename only
 
@@ -80,29 +79,11 @@ def download_from_zenodo(
         Path to downloaded file
 
     Raises:
-        ValueError: If version not found
+        ValueError: If DOI format is invalid
         requests.RequestException: If download fails
     """
-    # get available versions to find the record ID for the specific version
-    record_id = _extract_record_id(zenodo_doi)
-    versions = _get_zenodo_versions(record_id, sandbox=sandbox)
-
-    # find the specific version
-    version_match = None
-    for v in versions:
-        if v["version"] == version:
-            version_match = v
-            break
-
-    if version_match is None:
-        version_tags = [v["version"] for v in versions]
-        available_versions = ", ".join(version_tags)
-        raise ValueError(
-            f"Version {version} not found. Available versions: {available_versions}"
-        )
-
-    # get the specific record ID for this version
-    specific_record_id = version_match["id"]
+    # extract record ID directly from the version-specific DOI
+    specific_record_id = _extract_record_id(version_doi)
 
     # construct filename
     filename = f"{dataset_id}_{author_name}_ts.tsv"
@@ -250,6 +231,21 @@ def _extract_record_id(zenodo_doi: str) -> str:
         return match.group(1)
 
     raise ValueError(f"Invalid Zenodo DOI format: {zenodo_doi}")
+
+
+def get_zenodo_versions(zenodo_doi: str, sandbox: bool = False) -> list[dict[str, Any]]:
+    """Get all versions for a Zenodo concept DOI.
+
+    Args:
+        zenodo_doi: Zenodo concept DOI
+        sandbox: Whether to use sandbox environment
+
+    Returns:
+        List of version dictionaries with 'id', 'version', 'doi', and
+        'publication_date' fields
+    """
+    record_id = _extract_record_id(zenodo_doi)
+    return _get_zenodo_versions(record_id, sandbox=sandbox)
 
 
 def _get_zenodo_versions(record_id: str, sandbox: bool = False) -> list[dict[str, Any]]:
