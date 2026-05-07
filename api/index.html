@@ -2470,11 +2470,14 @@ available datasets.</p>
                 <code>version</code>
             </td>
             <td>
-                  <code><span title="str">str</span></code>
+                  <code><span title="typing.Union">Union</span>[<span title="str">str</span>, <span title="list">list</span>[<span title="str">str</span>]]</code>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Dataset version to download. Default is "latest".</p>
+                <p>Dataset version to download. Default is "latest". When downloading
+multiple datasets, can be a list of the same length as dataset_id to
+pin each dataset to a specific version. A single non-"latest" version
+is recycled with a warning.</p>
               </div>
             </td>
             <td>
