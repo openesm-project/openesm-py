@@ -426,3 +426,142 @@ def test_process_metadata_with_empty_values():
     assert result["features"] is None
     # Test a field that doesn't exist in the metadata
     assert result["additional_comments"] is None
+
+
+def test_process_metadata_single_item_list():
+    """Single-item list is unwrapped to the value itself."""
+    meta = {"dataset_id": "0005", "topics": ["stress"]}
+    result = process_specific_metadata(meta)
+    assert result["topics"] == "stress"
+
+
+def test_process_metadata_dict_value():
+    """Dict values are converted to string representation."""
+    meta = {"dataset_id": "0006", "topics": {"key": "value"}}
+    result = process_specific_metadata(meta)
+    assert isinstance(result["topics"], str)
+
+
+def test_process_metadata_features_as_list_fallback():
+    """Features that cannot be converted to DataFrame fall back to list repr."""
+    # pass a list of non-uniform dicts that polars would reject
+    meta = {
+        "dataset_id": "0007",
+        "features": [{"a": 1}, {"b": 2}],  # mismatched keys -> polars may fail
+    }
+    result = process_specific_metadata(meta)
+    # result["features"] is either a DataFrame or the raw list — just not None
+    assert result["features"] is not None
+
+
+def test_format_bytes_tb_branch(temp_cache_dir):
+    """cache_info format_bytes reaches TB branch for very large sizes."""
+    from unittest.mock import patch as _patch
+
+    large_size = 2 * 1024**4  # 2 TB
+    fake_stat = unittest.mock.MagicMock()
+    fake_stat.st_size = large_size
+
+    # Build a fake file in temp_cache_dir so os.walk finds it
+    fake_file = temp_cache_dir / "bigfile.dat"
+    fake_file.write_bytes(b"x")
+
+    with (
+        _patch("openesm.utils.get_cache_dir", return_value=temp_cache_dir),
+        _patch("openesm.utils.os.walk") as mock_walk,
+        _patch("openesm.utils.os.path.getsize", return_value=large_size),
+    ):
+        mock_walk.return_value = [(str(temp_cache_dir), [], ["bigfile.dat"])]
+        # should not raise; the TB branch executes
+        cache_info()
+
+
+def test_find_datasets_json_in_zip(tmp_path):
+    """find_datasets_json_in_zip locates datasets.json inside a ZIP."""
+    import zipfile
+
+    from openesm.utils import find_datasets_json_in_zip
+
+    zip_path = tmp_path / "meta.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("openesm-1.0.0/datasets.json", '{"datasets": []}')
+
+    result = find_datasets_json_in_zip(zip_path)
+    assert result == "openesm-1.0.0/datasets.json"
+
+
+def test_find_datasets_json_in_zip_not_found(tmp_path):
+    """find_datasets_json_in_zip returns None when no datasets.json present."""
+    import zipfile
+
+    from openesm.utils import find_datasets_json_in_zip
+
+    zip_path = tmp_path / "empty.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("other.txt", "hello")
+
+    assert find_datasets_json_in_zip(zip_path) is None
+
+
+def test_find_datasets_json_bad_zip(tmp_path):
+    """find_datasets_json_in_zip returns None for a corrupt ZIP."""
+    from openesm.utils import find_datasets_json_in_zip
+
+    bad_zip = tmp_path / "bad.zip"
+    bad_zip.write_bytes(b"not a zip")
+
+    assert find_datasets_json_in_zip(bad_zip) is None
+
+
+def test_extract_datasets_json_from_zip_success(tmp_path):
+    """extract_datasets_json_from_zip writes datasets.json to dest_path."""
+    import zipfile
+
+    from openesm.utils import extract_datasets_json_from_zip
+
+    zip_path = tmp_path / "meta.zip"
+    content = '{"datasets": [{"dataset_id": "0001"}]}'
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("sub/datasets.json", content)
+
+    dest = tmp_path / "out" / "datasets.json"
+    result = extract_datasets_json_from_zip(zip_path, dest)
+
+    assert result is True
+    assert dest.exists()
+    assert dest.read_text() == content
+
+
+def test_extract_datasets_json_from_zip_no_json(tmp_path):
+    """extract_datasets_json_from_zip returns False when no datasets.json in ZIP."""
+    import zipfile
+
+    from openesm.utils import extract_datasets_json_from_zip
+
+    zip_path = tmp_path / "meta.zip"
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("readme.txt", "hello")
+
+    dest = tmp_path / "datasets.json"
+    result = extract_datasets_json_from_zip(zip_path, dest)
+    assert result is False
+
+
+def test_download_metadata_from_zenodo_cache_hit(tmp_path):
+    """download_metadata_from_zenodo returns cached path when fresh enough."""
+    from openesm.utils import download_metadata_from_zenodo
+
+    # create a fake cached datasets.json that is "fresh" (just created)
+    cache_dir = tmp_path / "v1.0.0"
+    cache_dir.mkdir(parents=True)
+    datasets_json = cache_dir / "datasets.json"
+    datasets_json.write_text('{"datasets": []}')
+
+    with (
+        # resolve_zenodo_version is a local import inside download_metadata_from_zenodo
+        patch("openesm.zenodo.resolve_zenodo_version", return_value="1.0.0"),
+        patch("openesm.utils.get_metadata_dir", return_value=cache_dir),
+    ):
+        result = download_metadata_from_zenodo(metadata_version="1.0.0", cache_hours=24)
+
+    assert result == datasets_json

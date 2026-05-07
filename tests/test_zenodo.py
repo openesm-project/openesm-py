@@ -14,6 +14,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from openesm.zenodo import (
     _extract_record_id,
     _get_zenodo_versions,
+    download_files_from_zenodo,
     download_from_zenodo,
     get_zenodo_versions,
     resolve_zenodo_version,
@@ -421,3 +422,141 @@ class TestGetZenodoVersionsPublic:
         mock_extract.assert_called_once_with("10.5072/zenodo.12345")
         mock_get_versions.assert_called_once_with("12345", sandbox=False)
         assert result[0]["version"] == "1.0.0"
+
+
+class TestDownloadFilesFromZenodo:
+    """Tests for download_files_from_zenodo."""
+
+    @patch("openesm.zenodo.download_with_progress")
+    @patch("openesm.zenodo.msg_info")
+    @patch("openesm.zenodo._get_zenodo_versions")
+    @patch("openesm.zenodo._extract_record_id")
+    def test_download_matching_files(
+        self, mock_extract, mock_get_versions, mock_msg, mock_download, tmp_path
+    ):
+        """Downloads files that match the given pattern."""
+        mock_extract.return_value = "12345"
+        mock_get_versions.return_value = [
+            {
+                "id": "12345",
+                "version": "1.0.0",
+                "doi": "10.5072/zenodo.12345",
+            }
+        ]
+
+        record_data = {
+            "files": [
+                {
+                    "key": "data.zip",
+                    "links": {
+                        "self": "https://zenodo.org/records/12345/files/data.zip"
+                    },
+                },
+                {
+                    "key": "readme.txt",
+                    "links": {
+                        "self": "https://zenodo.org/records/12345/files/readme.txt"
+                    },
+                },
+            ]
+        }
+
+        with requests_mock.Mocker() as m:
+            m.get("https://zenodo.org/api/records/12345", json=record_data)
+            result = download_files_from_zenodo(
+                "10.5072/zenodo.12340",
+                version="1.0.0",
+                dest_dir=tmp_path,
+                file_patterns=["*.zip"],
+            )
+
+        assert len(result) == 1
+        assert result[0] == tmp_path / "data.zip"
+        mock_download.assert_called_once()
+
+    @patch("openesm.zenodo._get_zenodo_versions")
+    @patch("openesm.zenodo._extract_record_id")
+    def test_version_not_found_raises(self, mock_extract, mock_get_versions, tmp_path):
+        """Raises ValueError when requested version is not in versions list."""
+        mock_extract.return_value = "12345"
+        mock_get_versions.return_value = [
+            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
+        ]
+
+        with pytest.raises(ValueError, match="Version 9.9.9 not found"):
+            download_files_from_zenodo(
+                "10.5072/zenodo.12340",
+                version="9.9.9",
+                dest_dir=tmp_path,
+            )
+
+    @patch("openesm.zenodo.download_with_progress")
+    @patch("openesm.zenodo.msg_info")
+    @patch("openesm.zenodo._get_zenodo_versions")
+    @patch("openesm.zenodo._extract_record_id")
+    def test_no_matching_files_raises(
+        self, mock_extract, mock_get_versions, mock_msg, mock_download, tmp_path
+    ):
+        """Raises ValueError when no files match the pattern."""
+        mock_extract.return_value = "12345"
+        mock_get_versions.return_value = [
+            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
+        ]
+
+        record_data = {
+            "files": [
+                {
+                    "key": "readme.txt",
+                    "links": {
+                        "self": "https://zenodo.org/records/12345/files/readme.txt"
+                    },
+                }
+            ]
+        }
+
+        with requests_mock.Mocker() as m:
+            m.get("https://zenodo.org/api/records/12345", json=record_data)
+            with pytest.raises(ValueError, match="No files matching"):
+                download_files_from_zenodo(
+                    "10.5072/zenodo.12340",
+                    version="1.0.0",
+                    dest_dir=tmp_path,
+                    file_patterns=["*.zip"],
+                )
+
+    @patch("openesm.zenodo.download_with_progress")
+    @patch("openesm.zenodo.msg_info")
+    @patch("openesm.zenodo._get_zenodo_versions")
+    @patch("openesm.zenodo._extract_record_id")
+    def test_default_pattern_matches_all(
+        self, mock_extract, mock_get_versions, mock_msg, mock_download, tmp_path
+    ):
+        """When file_patterns=None, all files are downloaded."""
+        mock_extract.return_value = "12345"
+        mock_get_versions.return_value = [
+            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
+        ]
+
+        record_data = {
+            "files": [
+                {
+                    "key": "a.tsv",
+                    "links": {"self": "https://zenodo.org/records/12345/files/a.tsv"},
+                },
+                {
+                    "key": "b.json",
+                    "links": {"self": "https://zenodo.org/records/12345/files/b.json"},
+                },
+            ]
+        }
+
+        with requests_mock.Mocker() as m:
+            m.get("https://zenodo.org/api/records/12345", json=record_data)
+            result = download_files_from_zenodo(
+                "10.5072/zenodo.12340",
+                version="1.0.0",
+                dest_dir=tmp_path,
+                file_patterns=None,
+            )
+
+        assert len(result) == 2

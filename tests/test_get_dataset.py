@@ -1065,3 +1065,289 @@ class TestReproducibilityMessage:
             if "reproducibility" in str(call).lower()
         ]
         assert len(repro_calls) == 0
+
+
+class TestGetDatasetErrorBranches:
+    """Tests for error branches in get_dataset that were previously uncovered."""
+
+    def _make_metadata_path(self):
+        """Return a MagicMock whose .parent.name == 'v1.0.0'."""
+        parent = MagicMock()
+        parent.name = "v1.0.0"
+        meta_path = MagicMock()
+        meta_path.parent = parent
+        return meta_path
+
+    def _make_patches(
+        self, sample_metadata, tmp_path, *, zenodo_doi="10.5072/zenodo.123456"
+    ):
+        """Return a dict of patch targets for standard get_dataset mocking."""
+        return {
+            "list": patch(
+                "openesm.get_dataset.list_datasets",
+                return_value=pl.DataFrame(
+                    {
+                        "dataset_id": ["0001"],
+                        "first_author": ["Smith"],
+                        "zenodo_doi": [zenodo_doi],
+                    }
+                ),
+            ),
+            "dl_meta": patch(
+                "openesm.get_dataset.download_metadata_from_zenodo",
+                return_value=self._make_metadata_path(),
+            ),
+            "read_json": patch(
+                "openesm.get_dataset.read_json_safe",
+                return_value={"datasets": [sample_metadata]},
+            ),
+            "versions": patch(
+                "openesm.get_dataset.get_zenodo_versions",
+                return_value=[
+                    {"version": "1.0.0", "doi": "10.5072/zenodo.999", "id": "999"}
+                ],
+            ),
+            "dl_zenodo": patch("openesm.get_dataset.download_from_zenodo"),
+            "read_csv": patch(
+                "openesm.get_dataset.pl.read_csv",
+                return_value=pl.DataFrame({"x": [1]}),
+            ),
+            "cache_path": patch(
+                "openesm.get_dataset.get_cache_path",
+                return_value=tmp_path / "data.tsv",
+            ),
+            "msg_info": patch("openesm.get_dataset.msg_info"),
+        }
+
+    def _make_catalog_df(self):
+        return pl.DataFrame({"dataset_id": ["0001"], "first_author": ["Smith"]})
+
+    def test_dataset_not_found_in_metadata_raises(self, tmp_path):
+        """Dataset ID exists in catalog but not in metadata JSON."""
+        with (
+            patch(
+                "openesm.get_dataset.list_datasets",
+                return_value=self._make_catalog_df(),
+            ),
+            patch(
+                "openesm.get_dataset.download_metadata_from_zenodo",
+                return_value=self._make_metadata_path(),
+            ),
+            patch(
+                "openesm.get_dataset.read_json_safe",
+                return_value={"datasets": []},  # empty — dataset not found
+            ),
+        ):
+            with pytest.raises(ValueError, match="not found in metadata"):
+                get_dataset("0001", quiet=True)
+
+    def test_no_zenodo_doi_raises(self, tmp_path, sample_metadata):
+        """Dataset metadata missing zenodo_doi raises ValueError."""
+        meta_no_doi = {k: v for k, v in sample_metadata.items() if k != "zenodo_doi"}
+        with (
+            patch(
+                "openesm.get_dataset.list_datasets",
+                return_value=self._make_catalog_df(),
+            ),
+            patch(
+                "openesm.get_dataset.download_metadata_from_zenodo",
+                return_value=self._make_metadata_path(),
+            ),
+            patch(
+                "openesm.get_dataset.read_json_safe",
+                return_value={"datasets": [meta_no_doi]},
+            ),
+        ):
+            with pytest.raises(ValueError, match="No Zenodo DOI"):
+                get_dataset("0001", quiet=True)
+
+    def test_no_versions_raises(self, sample_metadata, tmp_path):
+        """Empty versions list raises ValueError."""
+        patches = self._make_patches(sample_metadata, tmp_path)
+        patches["versions"] = patch(
+            "openesm.get_dataset.get_zenodo_versions", return_value=[]
+        )
+        with (
+            patches["list"],
+            patches["dl_meta"],
+            patches["read_json"],
+            patches["versions"],
+        ):
+            with pytest.raises(ValueError, match="No versions found"):
+                get_dataset("0001", quiet=True)
+
+    def test_version_not_found_raises(self, sample_metadata, tmp_path):
+        """Requesting a version that doesn't exist raises ValueError."""
+        patches = self._make_patches(sample_metadata, tmp_path)
+        with (
+            patches["list"],
+            patches["dl_meta"],
+            patches["read_json"],
+            patches["versions"],
+        ):
+            with pytest.raises(ValueError, match="Version 9.9.9 not found"):
+                get_dataset("0001", version="9.9.9", quiet=True)
+
+    def test_version_doi_missing_raises(self, sample_metadata, tmp_path):
+        """Version in list but doi is None raises ValueError."""
+        patches = self._make_patches(sample_metadata, tmp_path)
+        patches["versions"] = patch(
+            "openesm.get_dataset.get_zenodo_versions",
+            return_value=[{"version": "1.0.0", "doi": None, "id": "999"}],
+        )
+        with (
+            patches["list"],
+            patches["dl_meta"],
+            patches["read_json"],
+            patches["versions"],
+        ):
+            with pytest.raises(
+                ValueError, match="Could not resolve version-specific DOI"
+            ):
+                get_dataset("0001", quiet=True)
+
+    def test_custom_path_used(self, sample_metadata, tmp_path):
+        """When path= is provided, data is saved there instead of cache."""
+        data_file = tmp_path / "0001_smith_ts.tsv"
+        data_file.touch()
+
+        patches = self._make_patches(sample_metadata, tmp_path)
+        with (
+            patches["list"],
+            patches["dl_meta"],
+            patches["read_json"],
+            patches["versions"],
+            patches["dl_zenodo"],
+            patches["read_csv"],
+            patches["msg_info"],
+            patch("builtins.print"),
+        ):
+            result = get_dataset("0001", path=str(tmp_path), quiet=True)
+
+        assert isinstance(result, OpenESMDataset)
+
+    def test_force_download_triggers_download(self, sample_metadata, tmp_path):
+        """force_download=True calls download_from_zenodo even if file exists."""
+        data_file = tmp_path / "0001_smith_ts.tsv"
+        data_file.touch()
+
+        patches = self._make_patches(sample_metadata, tmp_path)
+        patches["cache_path"] = patch(
+            "openesm.get_dataset.get_cache_path", return_value=data_file
+        )
+        mock_dl = MagicMock()
+        patches["dl_zenodo"] = patch(
+            "openesm.get_dataset.download_from_zenodo", mock_dl
+        )
+        with (
+            patches["list"],
+            patches["dl_meta"],
+            patches["read_json"],
+            patches["versions"],
+            patches["dl_zenodo"],
+            patches["read_csv"],
+            patches["cache_path"],
+            patches["msg_info"],
+            patch("builtins.print"),
+        ):
+            get_dataset("0001", force_download=True, quiet=True)
+
+        mock_dl.assert_called_once()
+
+    def test_non_str_version_raises_typeerror(self, sample_metadata, tmp_path):
+        """Passing version=123 (int) to get_dataset raises TypeError."""
+        patches = self._make_patches(sample_metadata, tmp_path)
+        with (
+            patches["list"],
+            patches["dl_meta"],
+            patches["read_json"],
+            patches["versions"],
+        ):
+            with pytest.raises(TypeError):
+                get_dataset("0001", version=123, quiet=True)  # type: ignore[arg-type]
+
+
+class TestGetMultipleDatasetsBranches:
+    """Additional branch coverage for _get_multiple_datasets."""
+
+    def test_invalid_version_type_raises(self, sample_dataframe, sample_metadata):
+        """Passing version as int raises TypeError."""
+        with pytest.raises(TypeError, match="must be a str or list"):
+            _get_multiple_datasets(
+                ["0001"],
+                version=1,  # type: ignore[arg-type]
+                metadata_version="latest",
+                cache=True,
+                force_download=False,
+                sandbox=False,
+                quiet=True,
+            )
+
+    def test_quiet_false_prints_msg_info(self, sample_dataframe, sample_metadata):
+        """quiet=False emits msg_info with download progress message."""
+        with (
+            patch("openesm.get_dataset.get_dataset") as mock_get,
+            patch("openesm.get_dataset.msg_info") as mock_msg,
+            patch("builtins.print"),
+        ):
+            mock_get.return_value = OpenESMDataset(
+                sample_dataframe, sample_metadata, "0001", "1.0.0", "2.0.0"
+            )
+            _get_multiple_datasets(
+                ["0001"],
+                version="latest",
+                metadata_version="latest",
+                cache=True,
+                force_download=False,
+                sandbox=False,
+                quiet=False,
+            )
+        download_calls = [c for c in mock_msg.call_args_list if "Downloading" in str(c)]
+        assert len(download_calls) == 1
+
+    def test_repro_message_printed_for_multiple(
+        self, sample_dataframe, sample_metadata
+    ):
+        """quiet=False prints reproducibility call for multiple datasets."""
+        with (
+            patch("openesm.get_dataset.get_dataset") as mock_get,
+            patch("openesm.get_dataset.msg_info") as mock_msg,
+            patch("builtins.print"),
+        ):
+            mock_get.side_effect = [
+                OpenESMDataset(
+                    sample_dataframe, sample_metadata, "0001", "1.0.0", "2.0.0"
+                ),
+                OpenESMDataset(
+                    sample_dataframe, sample_metadata, "0002", "2.0.0", "2.0.0"
+                ),
+            ]
+            _get_multiple_datasets(
+                ["0001", "0002"],
+                version="latest",
+                metadata_version="latest",
+                cache=True,
+                force_download=False,
+                sandbox=False,
+                quiet=False,
+            )
+        repro_calls = [
+            c for c in mock_msg.call_args_list if "reproducibility" in str(c).lower()
+        ]
+        assert len(repro_calls) == 1
+        assert "0001" in str(repro_calls[0])
+        assert "0002" in str(repro_calls[0])
+
+    def test_empty_dataset_ids_no_crash(self):
+        """Empty dataset_ids list does not crash (regression: IndexError guard)."""
+        result = _get_multiple_datasets(
+            [],
+            version="latest",
+            metadata_version="latest",
+            cache=True,
+            force_download=False,
+            sandbox=False,
+            quiet=False,
+        )
+        assert isinstance(result, OpenESMDatasetList)
+        assert len(result) == 0

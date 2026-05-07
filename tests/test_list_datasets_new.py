@@ -176,5 +176,104 @@ class TestListDatasetsIntegration:
             pytest.skip(f"Integration test failed (network issue?): {e}")
 
 
+class TestProcessRawDatasetsListFeatureBranches:
+    """Cover the list/other features branches in _process_raw_datasets_list."""
+
+    def test_features_as_list_fallback(self):
+        """Features stored as a plain list (after polars conversion failure) is
+        shown as 'List(N items)'."""
+        # process_specific_metadata returns features as a list when polars fails;
+        # we simulate that by patching it to return a list directly
+        raw = {
+            "datasets": [
+                {
+                    "dataset_id": "0099",
+                    "first_author": "Test",
+                    "features": [{"a": 1}, {"b": 2}],
+                }
+            ]
+        }
+        with patch(
+            "openesm.list_datasets.process_specific_metadata",
+            return_value={
+                "dataset_id": "0099",
+                "first_author": "Test",
+                "features": [{"a": 1}, {"b": 2}],  # raw list
+                **{
+                    k: None
+                    for k in [
+                        "year",
+                        "reference_a",
+                        "reference_b",
+                        "paper_doi",
+                        "zenodo_doi",
+                        "license",
+                        "link_to_data",
+                        "link_to_codebook",
+                        "link_to_code",
+                        "n_participants",
+                        "n_time_points",
+                        "n_days",
+                        "n_beeps_per_day",
+                        "passive_data_available",
+                        "cross_sectional_available",
+                        "topics",
+                        "implicit_missingness",
+                        "raw_time_stamp",
+                        "sampling_scheme",
+                        "participants",
+                        "coding_file",
+                        "additional_comments",
+                    ]
+                },
+            },
+        ):
+            result = _process_raw_datasets_list(raw)
+
+        assert result["features"][0] == "List(2 items)"
+
+    def test_features_as_string(self):
+        """Features stored as a plain string falls through to the else branch."""
+        raw = {"datasets": [{"dataset_id": "0098", "first_author": "Test"}]}
+        with patch(
+            "openesm.list_datasets.process_specific_metadata",
+            return_value={
+                "dataset_id": "0098",
+                "first_author": "Test",
+                "features": "some string value",
+                **{
+                    k: None
+                    for k in [
+                        "year",
+                        "reference_a",
+                        "reference_b",
+                        "paper_doi",
+                        "zenodo_doi",
+                        "license",
+                        "link_to_data",
+                        "link_to_codebook",
+                        "link_to_code",
+                        "n_participants",
+                        "n_time_points",
+                        "n_days",
+                        "n_beeps_per_day",
+                        "passive_data_available",
+                        "cross_sectional_available",
+                        "topics",
+                        "implicit_missingness",
+                        "raw_time_stamp",
+                        "sampling_scheme",
+                        "participants",
+                        "coding_file",
+                        "additional_comments",
+                    ]
+                },
+            },
+        ):
+            result = _process_raw_datasets_list(raw)
+
+        assert result["features"][0] == "some string value"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
