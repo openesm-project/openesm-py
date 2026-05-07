@@ -415,7 +415,12 @@ def get_dataset(
         0, named=True
     )
 
-    author_lower = dataset_info["first_author"].lower()
+    author_raw = dataset_info["first_author"]
+    # normalise umlauts before lowercasing
+    author_raw = author_raw.replace("ö", "oe").replace("Ö", "oe")
+    author_raw = author_raw.replace("ä", "ae").replace("Ä", "ae")
+    author_raw = author_raw.replace("ü", "ue").replace("Ü", "ue")
+    author_lower = author_raw.lower()
     # remove spaces from author name
     author_lower = author_lower.replace(" ", "")
 
