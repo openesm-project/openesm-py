@@ -10,7 +10,12 @@ import pytest
 # Add src to path to import openesm
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from openesm.get_dataset import OpenESMDataset, OpenESMDatasetList, get_dataset
+from openesm.get_dataset import (
+    OpenESMDataset,
+    OpenESMDatasetList,
+    _get_multiple_datasets,
+    get_dataset,
+)
 
 
 @pytest.fixture
@@ -420,7 +425,7 @@ class TestGetDataset:
     @patch("openesm.get_dataset.list_datasets")
     @patch("openesm.get_dataset.download_metadata_from_zenodo")
     @patch("openesm.get_dataset.read_json_safe")
-    @patch("openesm.get_dataset.resolve_zenodo_version")
+    @patch("openesm.get_dataset.get_zenodo_versions")
     @patch("openesm.get_dataset.download_from_zenodo")
     @patch("openesm.get_dataset.pl.read_csv")
     @patch("openesm.get_dataset.get_cache_path")
@@ -429,7 +434,7 @@ class TestGetDataset:
         mock_get_cache_path,
         mock_read_csv,
         mock_download_zenodo,
-        mock_resolve_version,
+        mock_get_zenodo_versions,
         mock_read_json,
         mock_download_metadata,
         mock_list_datasets,
@@ -448,19 +453,21 @@ class TestGetDataset:
         )
         mock_list_datasets.return_value = datasets_df
 
-        # Mock cache paths
-        metadata_path = temp_cache_dir / "metadata.json"
+        # Mock cache path for data
         data_path = temp_cache_dir / "data.tsv"
-        mock_get_cache_path.side_effect = [metadata_path, data_path]
-
-        # Mock file existence (both don't exist, so will download)
-        metadata_path.touch()  # Create empty file
+        mock_get_cache_path.return_value = data_path
         data_path.touch()
 
-        # Mock other dependencies
-        mock_download_metadata.return_value = metadata_path
+        # Mock metadata path with versioned parent (resolved_metadata_version comes
+        # from metadata_path.parent.name.lstrip("v"))
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
+
         mock_read_json.return_value = {"datasets": [sample_metadata]}
-        mock_resolve_version.return_value = "1.0.0"
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
         mock_read_csv.return_value = sample_dataframe
 
         # Call function
@@ -470,11 +477,12 @@ class TestGetDataset:
         assert isinstance(result, OpenESMDataset)
         assert result.dataset_id == "0001"
         assert result.version == "1.0.0"
+        assert result.metadata_version == "2.5.0"
         assert result.data.equals(sample_dataframe)
 
         # Verify calls
         mock_list_datasets.assert_called_once()
-        mock_resolve_version.assert_called_once()
+        mock_get_zenodo_versions.assert_called_once()
 
     @patch("openesm.get_dataset.list_datasets")
     def test_get_dataset_not_found(self, mock_list_datasets):
@@ -506,7 +514,7 @@ class TestGetDataset:
     @patch("openesm.get_dataset.list_datasets")
     @patch("openesm.get_dataset.download_metadata_from_zenodo")
     @patch("openesm.get_dataset.read_json_safe")
-    @patch("openesm.get_dataset.resolve_zenodo_version")
+    @patch("openesm.get_dataset.get_zenodo_versions")
     @patch("openesm.get_dataset.download_from_zenodo")
     @patch("openesm.get_dataset.pl.read_csv")
     @patch("openesm.get_dataset.get_cache_path")
@@ -515,7 +523,7 @@ class TestGetDataset:
         mock_get_cache_path,
         mock_read_csv,
         mock_download_zenodo,
-        mock_resolve_version,
+        mock_get_zenodo_versions,
         mock_read_json,
         mock_download_metadata,
         mock_list_datasets,
@@ -534,16 +542,17 @@ class TestGetDataset:
         )
         mock_list_datasets.return_value = datasets_df
 
-        # Mock cache paths and other dependencies
-        metadata_path = temp_cache_dir / "metadata.json"
         data_path = temp_cache_dir / "data.tsv"
-        # Return paths for each get_dataset call (2 paths × 5 test formats = 10 calls)
-        mock_get_cache_path.side_effect = [metadata_path, data_path] * 5
-        metadata_path.touch()
         data_path.touch()
-        mock_download_metadata.return_value = metadata_path
+        mock_get_cache_path.return_value = data_path
+
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
         mock_read_json.return_value = {"datasets": [sample_metadata]}
-        mock_resolve_version.return_value = "1.0.0"
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
         mock_read_csv.return_value = sample_dataframe
 
         # Test different input formats that should all resolve to "0001"
@@ -581,7 +590,7 @@ class TestGetDataset:
     @patch("openesm.get_dataset.list_datasets")
     @patch("openesm.get_dataset.download_metadata_from_zenodo")
     @patch("openesm.get_dataset.read_json_safe")
-    @patch("openesm.get_dataset.resolve_zenodo_version")
+    @patch("openesm.get_dataset.get_zenodo_versions")
     @patch("openesm.get_dataset.download_from_zenodo")
     @patch("openesm.get_dataset.pl.read_csv")
     @patch("openesm.get_dataset.get_cache_path")
@@ -592,7 +601,7 @@ class TestGetDataset:
         mock_get_cache_path,
         mock_read_csv,
         mock_download_zenodo,
-        mock_resolve_version,
+        mock_get_zenodo_versions,
         mock_read_json,
         mock_download_metadata,
         mock_list_datasets,
@@ -601,7 +610,6 @@ class TestGetDataset:
         temp_cache_dir,
     ):
         """Test that get_dataset prints dataset info when quiet=False."""
-        # Mock list_datasets response
         datasets_df = pl.DataFrame(
             {
                 "dataset_id": ["0001"],
@@ -611,25 +619,21 @@ class TestGetDataset:
         )
         mock_list_datasets.return_value = datasets_df
 
-        # Mock cache paths
-        metadata_path = temp_cache_dir / "metadata.json"
         data_path = temp_cache_dir / "data.tsv"
-        mock_get_cache_path.side_effect = [metadata_path, data_path]
-
-        # Create files so no download needed
-        metadata_path.touch()
         data_path.touch()
+        mock_get_cache_path.return_value = data_path
 
-        # Mock other dependencies
-        mock_download_metadata.return_value = metadata_path
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
         mock_read_json.return_value = {"datasets": [sample_metadata]}
-        mock_resolve_version.return_value = "1.0.0"
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
         mock_read_csv.return_value = sample_dataframe
 
-        # Call function with quiet=False (default)
         get_dataset("0001")
 
-        # Should print the dataset string representation
         mock_print.assert_called()
         printed_arg = mock_print.call_args[0][0]
         assert isinstance(printed_arg, OpenESMDataset)
@@ -639,7 +643,7 @@ class TestCSVParameterHandling:
     """Test CSV reading with null_values and infer_schema_length parameters."""
 
     @patch("openesm.get_dataset.pl.read_csv")
-    @patch("openesm.get_dataset.resolve_zenodo_version")
+    @patch("openesm.get_dataset.get_zenodo_versions")
     @patch("openesm.get_dataset.read_json_safe")
     @patch("openesm.get_dataset.download_metadata_from_zenodo")
     @patch("openesm.get_dataset.get_cache_path")
@@ -650,14 +654,13 @@ class TestCSVParameterHandling:
         mock_get_cache_path,
         mock_download_metadata,
         mock_read_json,
-        mock_resolve_version,
+        mock_get_zenodo_versions,
         mock_read_csv,
         sample_dataframe,
         sample_metadata,
         temp_cache_dir,
     ):
         """Test that pl.read_csv is called with null_values parameter."""
-        # Mock list_datasets response
         datasets_df = pl.DataFrame(
             {
                 "dataset_id": ["0001"],
@@ -667,25 +670,21 @@ class TestCSVParameterHandling:
         )
         mock_list_datasets.return_value = datasets_df
 
-        # Mock cache paths
-        metadata_path = temp_cache_dir / "metadata.json"
         data_path = temp_cache_dir / "data.tsv"
-        mock_get_cache_path.side_effect = [metadata_path, data_path]
-
-        # Create files
-        metadata_path.touch()
         data_path.touch()
+        mock_get_cache_path.return_value = data_path
 
-        # Mock other dependencies
-        mock_download_metadata.return_value = metadata_path
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
         mock_read_json.return_value = {"datasets": [sample_metadata]}
-        mock_resolve_version.return_value = "1.0.0"
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
         mock_read_csv.return_value = sample_dataframe
 
-        # Call function
         get_dataset("0001", quiet=True)
 
-        # Verify pl.read_csv was called with correct parameters
         mock_read_csv.assert_called_once()
         call_kwargs = mock_read_csv.call_args[1]
         assert call_kwargs["separator"] == "\t"
@@ -694,7 +693,7 @@ class TestCSVParameterHandling:
         assert "" in call_kwargs["null_values"]
 
     @patch("openesm.get_dataset.pl.read_csv")
-    @patch("openesm.get_dataset.resolve_zenodo_version")
+    @patch("openesm.get_dataset.get_zenodo_versions")
     @patch("openesm.get_dataset.read_json_safe")
     @patch("openesm.get_dataset.download_metadata_from_zenodo")
     @patch("openesm.get_dataset.get_cache_path")
@@ -705,14 +704,13 @@ class TestCSVParameterHandling:
         mock_get_cache_path,
         mock_download_metadata,
         mock_read_json,
-        mock_resolve_version,
+        mock_get_zenodo_versions,
         mock_read_csv,
         sample_dataframe,
         sample_metadata,
         temp_cache_dir,
     ):
         """Test that pl.read_csv is called with infer_schema_length parameter."""
-        # Mock list_datasets response
         datasets_df = pl.DataFrame(
             {
                 "dataset_id": ["0001"],
@@ -722,25 +720,21 @@ class TestCSVParameterHandling:
         )
         mock_list_datasets.return_value = datasets_df
 
-        # Mock cache paths
-        metadata_path = temp_cache_dir / "metadata.json"
         data_path = temp_cache_dir / "data.tsv"
-        mock_get_cache_path.side_effect = [metadata_path, data_path]
-
-        # Create files
-        metadata_path.touch()
         data_path.touch()
+        mock_get_cache_path.return_value = data_path
 
-        # Mock other dependencies
-        mock_download_metadata.return_value = metadata_path
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
         mock_read_json.return_value = {"datasets": [sample_metadata]}
-        mock_resolve_version.return_value = "1.0.0"
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
         mock_read_csv.return_value = sample_dataframe
 
-        # Call function
         get_dataset("0001", quiet=True)
 
-        # Verify pl.read_csv was called with infer_schema_length
         mock_read_csv.assert_called_once()
         call_kwargs = mock_read_csv.call_args[1]
         assert "infer_schema_length" in call_kwargs
@@ -785,3 +779,289 @@ class TestCSVParameterHandling:
         assert df.shape == (4, 2)
         assert df["score"].dtype == pl.Float64
         assert df["score"][3] == 0.6666666666666666
+
+
+class TestUmlautNormalisation:
+    """Tests for umlaut normalisation in author names."""
+
+    @patch("openesm.get_dataset.list_datasets")
+    @patch("openesm.get_dataset.download_metadata_from_zenodo")
+    @patch("openesm.get_dataset.read_json_safe")
+    @patch("openesm.get_dataset.get_zenodo_versions")
+    @patch("openesm.get_dataset.download_from_zenodo")
+    @patch("openesm.get_dataset.pl.read_csv")
+    @patch("openesm.get_dataset.get_cache_path")
+    def test_umlaut_in_author_name(
+        self,
+        mock_get_cache_path,
+        mock_read_csv,
+        mock_download_zenodo,
+        mock_get_zenodo_versions,
+        mock_read_json,
+        mock_download_metadata,
+        mock_list_datasets,
+        sample_dataframe,
+        tmp_path,
+    ):
+        """Test that umlauts in author names are normalised before lowercasing."""
+        umlaut_metadata = {
+            "dataset_id": "0001",
+            "first_author": "Müller",
+            "year": 2023,
+            "zenodo_doi": "10.5072/zenodo.123456",
+        }
+        datasets_df = pl.DataFrame(
+            {
+                "dataset_id": ["0001"],
+                "first_author": ["Müller"],
+                "zenodo_doi": ["10.5072/zenodo.123456"],
+            }
+        )
+        mock_list_datasets.return_value = datasets_df
+
+        data_path = tmp_path / "data.tsv"
+        data_path.touch()
+        mock_get_cache_path.return_value = data_path
+
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
+        mock_read_json.return_value = {"datasets": [umlaut_metadata]}
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
+        mock_read_csv.return_value = sample_dataframe
+
+        get_dataset("0001", quiet=True)
+
+        # get_cache_path should be called with the normalised filename
+        cache_call_kwargs = mock_get_cache_path.call_args[1]
+        assert cache_call_kwargs["filename"] == "0001_mueller_ts.tsv"
+
+    def test_umlaut_replacements(self):
+        """Test all umlaut replacements produce correct filenames."""
+        cases = [
+            ("Müller", "mueller"),
+            ("Schäfer", "schaefer"),
+            ("Grün", "gruen"),
+            ("ÖBERG", "oeberg"),
+            ("Smith", "smith"),
+        ]
+        for raw, expected in cases:
+            normalised = raw.replace("ö", "oe").replace("Ö", "oe")
+            normalised = normalised.replace("ä", "ae").replace("Ä", "ae")
+            normalised = normalised.replace("ü", "ue").replace("Ü", "ue")
+            normalised = normalised.lower().replace(" ", "")
+            assert (
+                normalised == expected
+            ), f"{raw!r} -> {normalised!r}, expected {expected!r}"
+
+
+class TestVersionPinning:
+    """Tests for per-dataset version pinning."""
+
+    def test_version_list_correct_length(self, sample_dataframe, sample_metadata):
+        """Test that a version list of correct length is accepted."""
+        with (
+            patch("openesm.get_dataset.get_dataset") as mock_get,
+            patch("openesm.get_dataset.msg_info"),
+            patch("builtins.print"),
+        ):
+            mock_get.return_value = OpenESMDataset(
+                sample_dataframe, sample_metadata, "0001", "1.0.0", "2.0.0"
+            )
+            _get_multiple_datasets(
+                ["0001", "0002"],
+                version=["1.0.0", "2.0.0"],
+                metadata_version="latest",
+                cache=True,
+                force_download=False,
+                sandbox=False,
+                quiet=True,
+            )
+            calls = mock_get.call_args_list
+            assert calls[0][1]["version"] == "1.0.0"
+            assert calls[1][1]["version"] == "2.0.0"
+
+    def test_version_single_latest_no_warning(self, sample_dataframe, sample_metadata):
+        """Test that recycling 'latest' does not emit a warning."""
+        import warnings
+
+        with (
+            patch("openesm.get_dataset.get_dataset") as mock_get,
+            patch("openesm.get_dataset.msg_info"),
+            patch("builtins.print"),
+        ):
+            mock_get.return_value = OpenESMDataset(
+                sample_dataframe, sample_metadata, "0001", "1.0.0", "2.0.0"
+            )
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                _get_multiple_datasets(
+                    ["0001", "0002"],
+                    version="latest",
+                    metadata_version="latest",
+                    cache=True,
+                    force_download=False,
+                    sandbox=False,
+                    quiet=True,
+                )
+            assert len(w) == 0
+
+    def test_version_single_pinned_emits_warning(
+        self, sample_dataframe, sample_metadata
+    ):
+        """Test that recycling a pinned version emits a warning."""
+        import warnings
+
+        with (
+            patch("openesm.get_dataset.get_dataset") as mock_get,
+            patch("openesm.get_dataset.msg_info"),
+            patch("builtins.print"),
+        ):
+            mock_get.return_value = OpenESMDataset(
+                sample_dataframe, sample_metadata, "0001", "1.0.0", "2.0.0"
+            )
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter("always")
+                _get_multiple_datasets(
+                    ["0001", "0002"],
+                    version="1.0.0",
+                    metadata_version="latest",
+                    cache=True,
+                    force_download=False,
+                    sandbox=False,
+                    quiet=True,
+                )
+            assert len(w) == 1
+            assert "Recycling" in str(w[0].message)
+
+    def test_version_length_mismatch_raises(self, sample_dataframe, sample_metadata):
+        """Test that mismatched version list length raises ValueError."""
+        with pytest.raises(ValueError, match="must be length 1 or the same length"):
+            _get_multiple_datasets(
+                ["0001", "0002"],
+                version=["1.0.0"],  # wrong length
+                metadata_version="latest",
+                cache=True,
+                force_download=False,
+                sandbox=False,
+                quiet=True,
+            )
+
+
+class TestReproducibilityMessage:
+    """Tests for the reproducibility message after successful download."""
+
+    @patch("openesm.get_dataset.list_datasets")
+    @patch("openesm.get_dataset.download_metadata_from_zenodo")
+    @patch("openesm.get_dataset.read_json_safe")
+    @patch("openesm.get_dataset.get_zenodo_versions")
+    @patch("openesm.get_dataset.download_from_zenodo")
+    @patch("openesm.get_dataset.pl.read_csv")
+    @patch("openesm.get_dataset.get_cache_path")
+    @patch("openesm.get_dataset.msg_info")
+    def test_repro_message_single_dataset(
+        self,
+        mock_msg_info,
+        mock_get_cache_path,
+        mock_read_csv,
+        mock_download_zenodo,
+        mock_get_zenodo_versions,
+        mock_read_json,
+        mock_download_metadata,
+        mock_list_datasets,
+        sample_dataframe,
+        sample_metadata,
+        tmp_path,
+    ):
+        """Test reproducibility message is printed for single dataset."""
+        datasets_df = pl.DataFrame(
+            {
+                "dataset_id": ["0001"],
+                "first_author": ["Smith"],
+                "zenodo_doi": ["10.5072/zenodo.123456"],
+            }
+        )
+        mock_list_datasets.return_value = datasets_df
+
+        data_path = tmp_path / "data.tsv"
+        data_path.touch()
+        mock_get_cache_path.return_value = data_path
+
+        # parent.name = "v1.0.0" so resolved_metadata_version == "1.0.0"
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v1.0.0"
+        mock_download_metadata.return_value = mock_metadata_path
+        mock_read_json.return_value = {"datasets": [sample_metadata]}
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
+        mock_read_csv.return_value = sample_dataframe
+
+        with patch("builtins.print"):
+            get_dataset("0001", quiet=False)
+
+        repro_calls = [
+            str(call)
+            for call in mock_msg_info.call_args_list
+            if "reproducibility" in str(call).lower()
+        ]
+        assert len(repro_calls) == 1
+        assert 'openesm.get_dataset("0001"' in repro_calls[0]
+        assert 'version="1.0.0"' in repro_calls[0]
+        assert 'metadata_version="1.0.0"' in repro_calls[0]
+
+    @patch("openesm.get_dataset.list_datasets")
+    @patch("openesm.get_dataset.download_metadata_from_zenodo")
+    @patch("openesm.get_dataset.read_json_safe")
+    @patch("openesm.get_dataset.get_zenodo_versions")
+    @patch("openesm.get_dataset.download_from_zenodo")
+    @patch("openesm.get_dataset.pl.read_csv")
+    @patch("openesm.get_dataset.get_cache_path")
+    @patch("openesm.get_dataset.msg_info")
+    def test_repro_message_suppressed_when_quiet(
+        self,
+        mock_msg_info,
+        mock_get_cache_path,
+        mock_read_csv,
+        mock_download_zenodo,
+        mock_get_zenodo_versions,
+        mock_read_json,
+        mock_download_metadata,
+        mock_list_datasets,
+        sample_dataframe,
+        sample_metadata,
+        tmp_path,
+    ):
+        """Test reproducibility message is suppressed when quiet=True."""
+        datasets_df = pl.DataFrame(
+            {
+                "dataset_id": ["0001"],
+                "first_author": ["Smith"],
+                "zenodo_doi": ["10.5072/zenodo.123456"],
+            }
+        )
+        mock_list_datasets.return_value = datasets_df
+
+        data_path = tmp_path / "data.tsv"
+        data_path.touch()
+        mock_get_cache_path.return_value = data_path
+
+        mock_metadata_path = MagicMock()
+        mock_metadata_path.parent.name = "v2.5.0"
+        mock_download_metadata.return_value = mock_metadata_path
+        mock_read_json.return_value = {"datasets": [sample_metadata]}
+        mock_get_zenodo_versions.return_value = [
+            {"version": "1.0.0", "doi": "10.5072/zenodo.999999", "id": "999999"}
+        ]
+        mock_read_csv.return_value = sample_dataframe
+
+        get_dataset("0001", quiet=True)
+
+        repro_calls = [
+            str(call)
+            for call in mock_msg_info.call_args_list
+            if "reproducibility" in str(call).lower()
+        ]
+        assert len(repro_calls) == 0

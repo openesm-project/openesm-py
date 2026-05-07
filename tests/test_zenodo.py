@@ -15,6 +15,7 @@ from openesm.zenodo import (
     _extract_record_id,
     _get_zenodo_versions,
     download_from_zenodo,
+    get_zenodo_versions,
     resolve_zenodo_version,
 )
 
@@ -306,115 +307,117 @@ class TestResolveZenodoVersion:
 
 
 class TestDownloadFromZenodo:
-    """Tests for download_from_zenodo function."""
+    """Tests for download_from_zenodo function.
+
+    download_from_zenodo now accepts a version-specific DOI directly,
+    so no version lookup is performed internally.
+    """
 
     @patch("openesm.zenodo.download_with_progress")
     @patch("openesm.zenodo.msg_info")
-    @patch("openesm.zenodo._get_zenodo_versions")
     @patch("openesm.zenodo._extract_record_id")
-    def test_download_success(
-        self, mock_extract, mock_get_versions, mock_msg_info, mock_download
-    ):
-        """Test successful download from Zenodo."""
-        mock_extract.return_value = "12340"
-        mock_get_versions.return_value = [
-            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
-        ]
+    def test_download_success(self, mock_extract, mock_msg_info, mock_download):
+        """Test successful download from Zenodo using version-specific DOI."""
+        mock_extract.return_value = "12345"
 
-        result = download_from_zenodo("10.5072/zenodo.12340", "0001", "Smith", "1.0.0")
+        result = download_from_zenodo(
+            version_doi="10.5072/zenodo.12345",
+            dataset_id="0001",
+            author_name="smith",
+            version="1.0.0",
+        )
 
-        # Should construct correct filename and URL
-        expected_filename = "0001_Smith_ts.tsv"
+        expected_filename = "0001_smith_ts.tsv"
         expected_url = f"https://zenodo.org/records/12345/files/{expected_filename}"
 
+        mock_extract.assert_called_once_with("10.5072/zenodo.12345")
         mock_download.assert_called_once_with(expected_url, Path(expected_filename))
         mock_msg_info.assert_called_once_with(
             f"Downloading {expected_filename} from Zenodo (version 1.0.0)"
         )
-
         assert result == Path(expected_filename)
 
     @patch("openesm.zenodo.download_with_progress")
     @patch("openesm.zenodo.msg_info")
-    @patch("openesm.zenodo._get_zenodo_versions")
     @patch("openesm.zenodo._extract_record_id")
     def test_download_with_custom_dest_path(
-        self, mock_extract, mock_get_versions, mock_msg_info, mock_download
+        self, mock_extract, mock_msg_info, mock_download
     ):
         """Test download with custom destination path."""
-        mock_extract.return_value = "12340"
-        mock_get_versions.return_value = [
-            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
-        ]
+        mock_extract.return_value = "12345"
 
         custom_path = Path("/custom/path/data.tsv")
         result = download_from_zenodo(
-            "10.5072/zenodo.12340", "0001", "Smith", "1.0.0", dest_path=custom_path
+            version_doi="10.5072/zenodo.12345",
+            dataset_id="0001",
+            author_name="smith",
+            version="1.0.0",
+            dest_path=custom_path,
         )
 
         mock_download.assert_called_once_with(
-            "https://zenodo.org/records/12345/files/0001_Smith_ts.tsv", custom_path
+            "https://zenodo.org/records/12345/files/0001_smith_ts.tsv", custom_path
         )
         assert result == custom_path
 
     @patch("openesm.zenodo.download_with_progress")
     @patch("openesm.zenodo.msg_info")
-    @patch("openesm.zenodo._get_zenodo_versions")
     @patch("openesm.zenodo._extract_record_id")
-    def test_download_from_sandbox(
-        self, mock_extract, mock_get_versions, mock_msg_info, mock_download
-    ):
+    def test_download_from_sandbox(self, mock_extract, mock_msg_info, mock_download):
         """Test download from sandbox environment."""
-        mock_extract.return_value = "12340"
-        mock_get_versions.return_value = [
-            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
-        ]
+        mock_extract.return_value = "12345"
 
         download_from_zenodo(
-            "10.5072/zenodo.12340", "0001", "Smith", "1.0.0", sandbox=True
+            version_doi="10.5072/zenodo.12345",
+            dataset_id="0001",
+            author_name="smith",
+            version="1.0.0",
+            sandbox=True,
         )
 
-        # Should use sandbox URL
         expected_url = (
-            "https://sandbox.zenodo.org/records/12345/files/0001_Smith_ts.tsv"
+            "https://sandbox.zenodo.org/records/12345/files/0001_smith_ts.tsv"
         )
-        mock_download.assert_called_once_with(expected_url, Path("0001_Smith_ts.tsv"))
-
-    @patch("openesm.zenodo._get_zenodo_versions")
-    @patch("openesm.zenodo._extract_record_id")
-    def test_download_version_not_found(self, mock_extract, mock_get_versions):
-        """Test error when requested version is not found."""
-        mock_extract.return_value = "12340"
-        mock_get_versions.return_value = [
-            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
-        ]
-
-        with pytest.raises(ValueError, match="Version 2.0.0 not found"):
-            download_from_zenodo("10.5072/zenodo.12340", "0001", "Smith", "2.0.0")
+        mock_download.assert_called_once_with(expected_url, Path("0001_smith_ts.tsv"))
 
     @patch("openesm.zenodo.download_with_progress")
     @patch("openesm.zenodo.msg_info")
-    @patch("openesm.zenodo._get_zenodo_versions")
     @patch("openesm.zenodo._extract_record_id")
     def test_download_with_string_dest_path(
-        self, mock_extract, mock_get_versions, mock_msg_info, mock_download
+        self, mock_extract, mock_msg_info, mock_download
     ):
         """Test download with string destination path."""
-        mock_extract.return_value = "12340"
-        mock_get_versions.return_value = [
-            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
-        ]
+        mock_extract.return_value = "12345"
 
         result = download_from_zenodo(
-            "10.5072/zenodo.12340",
-            "0001",
-            "Smith",
-            "1.0.0",
+            version_doi="10.5072/zenodo.12345",
+            dataset_id="0001",
+            author_name="smith",
+            version="1.0.0",
             dest_path="custom_file.tsv",
         )
 
         mock_download.assert_called_once_with(
-            "https://zenodo.org/records/12345/files/0001_Smith_ts.tsv",
+            "https://zenodo.org/records/12345/files/0001_smith_ts.tsv",
             Path("custom_file.tsv"),
         )
         assert result == Path("custom_file.tsv")
+
+
+class TestGetZenodoVersionsPublic:
+    """Tests for the public get_zenodo_versions wrapper."""
+
+    @patch("openesm.zenodo._get_zenodo_versions")
+    @patch("openesm.zenodo._extract_record_id")
+    def test_delegates_to_internal(self, mock_extract, mock_get_versions):
+        """Test that get_zenodo_versions extracts record ID and delegates."""
+        mock_extract.return_value = "12345"
+        mock_get_versions.return_value = [
+            {"id": "12345", "version": "1.0.0", "doi": "10.5072/zenodo.12345"}
+        ]
+
+        result = get_zenodo_versions("10.5072/zenodo.12345")
+
+        mock_extract.assert_called_once_with("10.5072/zenodo.12345")
+        mock_get_versions.assert_called_once_with("12345", sandbox=False)
+        assert result[0]["version"] == "1.0.0"
