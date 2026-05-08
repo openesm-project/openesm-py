@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
+## [0.2.0] - 2026-05-08
+- fix: deal with umlauts in author name
+- add: add better versioning and changelog practices to datasets and metadata
+
 ## [0.1.1] - 2025-10-29
 - fix: normalize author in get_dataset() by removing spaces when constructing filenames (improves matching to Zenodo files)
 
