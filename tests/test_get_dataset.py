@@ -852,9 +852,9 @@ class TestUmlautNormalisation:
             normalised = normalised.replace("ä", "ae").replace("Ä", "ae")
             normalised = normalised.replace("ü", "ue").replace("Ü", "ue")
             normalised = normalised.lower().replace(" ", "")
-            assert (
-                normalised == expected
-            ), f"{raw!r} -> {normalised!r}, expected {expected!r}"
+            assert normalised == expected, (
+                f"{raw!r} -> {normalised!r}, expected {expected!r}"
+            )
 
 
 class TestVersionPinning:
